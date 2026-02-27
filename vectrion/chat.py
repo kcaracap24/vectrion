@@ -24,29 +24,31 @@ _SYSTEM_PROMPT = (
 
 
 def chat(message: str, incident_context: dict[str, Any] | None = None) -> str:
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
         return (
             "Vectorian AI is not configured. "
-            "Please set the ANTHROPIC_API_KEY environment variable to enable the chat agent."
+            "Please set the OPENAI_API_KEY environment variable to enable the chat agent."
         )
 
     try:
-        import anthropic
+        from openai import OpenAI
 
-        client = anthropic.Anthropic(api_key=api_key)
+        client = OpenAI(api_key=api_key)
 
         user_content = message
         if incident_context:
             ctx_json = json.dumps(incident_context, indent=2)
             user_content = f"[Incident context]\n{ctx_json}\n\n[Operator question]\n{message}"
 
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             max_tokens=512,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_content}],
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
         )
-        return response.content[0].text
+        return response.choices[0].message.content
     except Exception as exc:
         return f"Vectorian encountered an error: {exc}"
