@@ -20,8 +20,7 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         body = request.get_json(force=True)
         incident_id = body.get("incident_id")
         incident_context = storage.load_state_obj(incident_id) if incident_id else None
-        reply = chat(body.get("message", ""), incident_context)
-        return jsonify({"reply": reply})
+        return jsonify(chat(body.get("message", ""), incident_context))
 
     @app.post("/trigger")
     def trigger():
