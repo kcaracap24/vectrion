@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vectrion"
+version = "0.1.0"
+description = "Vectrion MVP - Interactive Breach Response Agent"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "flask>=3.0,<4.0",
+  "anthropic>=0.25",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0,<9.0"
+]
+postgres = [
+  "psycopg[binary]>=3.1,<4.0"
+]
+
+[project.scripts]
+vectrion = "vectrion.cli:main"
+vectrion-http = "vectrion.http_server:main"
+vectrion-vql = "vectrion.query_cli:main"
+vectrion-ui = "vectrion.ui_server:main"

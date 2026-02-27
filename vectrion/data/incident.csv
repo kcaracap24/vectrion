@@ -1,0 +1,2 @@
+incident_id,reported_at,severity,reporter_name,reporter_email,reporter_phone,summary
+INC-2026-0001,2026-02-17T04:55:00Z,high,Alex Morgan,alex.morgan@example.com,+1-415-555-0199,Suspicious access to payroll exports and possible credential compromise

@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: vectrion
+      POSTGRES_USER: vectrion
+      POSTGRES_PASSWORD: vectrion
+    command: ["postgres", "-c", "shared_buffers=96MB", "-c", "work_mem=4MB"]
+    ports:
+      - "5432:5432"
+    mem_limit: 512m
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    mem_limit: 256m

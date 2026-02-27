@@ -1,0 +1,5 @@
+event_id,timestamp,subject,detail,email,phone,source
+EVT-1,2026-02-17T03:12:02Z,VPN Login,User authenticated from new ASN by alex.morgan@example.com,alex.morgan@example.com,+1 (415) 555-0199,vpn
+EVT-2,2026-02-17T03:18:44Z,Payroll Export,Bulk export triggered by service account svc-payroll from 10.2.4.9,svc-payroll@example.com,,payroll
+EVT-3,2026-02-17T03:22:10Z,Helpdesk Call,Caller provided SSN 123-45-6789 and requested MFA reset,,415-555-0199,helpdesk
+EVT-4,2026-02-17T03:49:51Z,Email Rule,Forwarding rule to attacker@evil.tld created by compromised mailbox,alex.morgan@example.com,,email
