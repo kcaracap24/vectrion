@@ -1272,7 +1272,9 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <button class="tab-btn" data-tab="vault" onclick="switchTab('vault')">&#128274;&nbsp; Data Vault
       {% if vault_files %}<span style="margin-left:6px;background:var(--blue);color:#fff;border-radius:999px;font-size:10px;padding:1px 7px;font-weight:700">{{ vault_files|length }}</span>{% endif %}
     </button>
-    <button class="tab-btn" data-tab="runbook" onclick="switchTab('runbook')">&#128196;&nbsp; Runbook Output</button>
+    <button class="tab-btn" data-tab="runbook" onclick="switchTab('runbook')">&#128200;&nbsp; Analysis
+      {% if completed %}<span style="margin-left:6px;background:var(--success);color:#fff;border-radius:999px;font-size:10px;padding:1px 7px;font-weight:700">{{ completed|length }}</span>{% endif %}
+    </button>
   </div>
 
   <!-- TAB: OVERVIEW -->
@@ -1433,12 +1435,321 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     </div>
   </div>
 
-  <!-- TAB: RUNBOOK -->
+  <!-- TAB: RUNBOOK ANALYSIS -->
   <div class="tab-pane" id="tab-runbook">
-    <div class="card">
-      <div class="card-header"><div class="card-title">&#128196; Runbook Output</div></div>
-      <pre>{{ runbook_json }}</pre>
+
+    {% if not completed %}
+    <div class="card" style="text-align:center;padding:48px 24px;color:var(--muted)">
+      <div style="font-size:40px;margin-bottom:12px">&#9989;</div>
+      <div style="font-weight:700;color:var(--navy);font-size:16px">No stages completed yet</div>
+      <div style="margin-top:6px;font-size:13px">Run the first stage from the Overview tab to see analysis results here.</div>
     </div>
+    {% endif %}
+
+    <!-- STAGE 1: DATA INTAKE -->
+    {% if "1" in completed and rb_ingest %}
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">&#128229; Stage 1 — Data Intake</div>
+        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:4px">
+        <div class="stat-card">
+          <div class="stat-icon">&#128193;</div>
+          <div class="stat-num">{{ rb_ingest.get("file_count", rb_ingest.get("source","—")) }}</div>
+          <div class="stat-label">{{ "Files Ingested" if rb_ingest.get("file_count") else "Source" }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">&#128203;</div>
+          <div class="stat-num">{{ rb_ingest.get("record_count", "—") }}</div>
+          <div class="stat-label">Records Extracted</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">{{ "&#128274;" if rb_ingest.get("source")=="vault" else "&#128196;" }}</div>
+          <div class="stat-num" style="font-size:18px;text-transform:capitalize">{{ rb_ingest.get("source","—") }}</div>
+          <div class="stat-label">Data Source</div>
+        </div>
+      </div>
+      {% if rb_ingest.get("files") %}
+      <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">
+        {% for fname in rb_ingest.files %}
+        <span class="badge" style="background:var(--silver-pale);color:var(--navy);font-weight:600;font-size:11px">{{ fname }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- STAGE 2: PII DETECTION -->
+    {% if "2" in completed and rb_norm_stats %}
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">&#128269; Stage 2 — PII Detection &amp; Normalization</div>
+        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:10px">
+        <div class="stat-card">
+          <div class="stat-icon">&#128203;</div>
+          <div class="stat-num">{{ rb_norm_stats.get("records_processed","—") }}</div>
+          <div class="stat-label">Records Processed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">&#9888;</div>
+          <div class="stat-num" style="color:var(--danger)">{{ rb_norm_stats.get("total_pii_hits","—") }}</div>
+          <div class="stat-label">PII Hits Detected</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">&#128272;</div>
+          <div class="stat-num">{{ rb_pii_kinds|length }}</div>
+          <div class="stat-label">PII Types Found</div>
+        </div>
+      </div>
+      {% if rb_pii_kinds %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for kind in rb_pii_kinds %}
+        <span class="badge badge-warn">{{ kind }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- STAGE 3: SENSITIVITY CLASSIFICATION -->
+    {% if "3" in completed and rb_sensitivity %}
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">&#127777; Stage 3 — Sensitivity Classification</div>
+        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+      </div>
+      <table style="margin-bottom:10px">
+        <thead><tr><th>Tier</th><th>Records</th></tr></thead>
+        <tbody>
+        {% for tier, cnt in rb_sensitivity.items() %}
+        <tr>
+          <td>
+            {% if "PHI" in tier %}<span class="badge" style="background:#FEE2E2;color:#991B1B">{{ tier }}</span>
+            {% elif "PCI" in tier %}<span class="badge" style="background:#FEF3C7;color:#92400E">{{ tier }}</span>
+            {% elif "Credentials" in tier %}<span class="badge" style="background:#F3E8FF;color:#6B21A8">{{ tier }}</span>
+            {% else %}<span class="badge badge-blue">{{ tier }}</span>{% endif %}
+          </td>
+          <td style="font-weight:700;color:var(--navy)">{{ cnt }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if rb_applicable_laws %}
+      <div style="margin-top:6px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">Applicable Laws Detected</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          {% for law in rb_applicable_laws %}
+          <span class="badge" style="background:var(--danger-bg);color:var(--danger);font-weight:700">{{ law }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- STAGE 4: AFFECTED PEOPLE -->
+    {% if "4" in completed %}
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">&#128101; Stage 4 — Entity Resolution</div>
+        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+      </div>
+      {% if rb_entity_resolution %}
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px">
+        <div class="stat-card">
+          <div class="stat-num">{{ rb_entity_resolution.get("total_records","—") }}</div>
+          <div class="stat-label">Total Records</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" style="color:var(--danger)">{{ rb_entity_resolution.get("unique_affected_people","—") }}</div>
+          <div class="stat-label">Unique Individuals</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num">{{ rb_entity_resolution.get("dedup_emails","—") }}</div>
+          <div class="stat-label">Deduplicated by Email</div>
+        </div>
+      </div>
+      {% endif %}
+      {% if rb_affected %}
+      <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>SSN</th><th>DOB</th><th>MRN</th><th>Source</th></tr></thead>
+        <tbody>
+        {% for p in rb_affected %}
+        <tr>
+          <td style="font-weight:600">{{ p.name or "—" }}</td>
+          <td style="font-family:monospace;font-size:12px">{{ p.email or "—" }}</td>
+          <td style="text-align:center">{{ "&#9888;" if p.ssn else "—" }}</td>
+          <td style="text-align:center">{{ "&#10003;" if p.dob else "—" }}</td>
+          <td style="text-align:center">{{ "&#10003;" if p.mrn else "—" }}</td>
+          <td style="font-size:11px;color:var(--muted)">{{ p.source or "—" }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- STAGE 5: IMPACT ASSESSMENT -->
+    {% if "5" in completed and rb_impact %}
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">&#128200; Stage 5 — Impact Assessment</div>
+        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px">
+        <div class="stat-card">
+          <div class="stat-icon">&#128101;</div>
+          <div class="stat-num" style="color:var(--danger)">{{ rb_impact.get("affected_count","—") }}</div>
+          <div class="stat-label">Affected Individuals</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">&#128196;</div>
+          <div class="stat-num">{{ rb_impact.get("affected_with_ssn","—") }}</div>
+          <div class="stat-label">With SSN</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">&#127973;</div>
+          <div class="stat-num">{{ rb_impact.get("affected_with_health","—") }}</div>
+          <div class="stat-label">With Health Data</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">&#128181;</div>
+          <div class="stat-num">{{ rb_impact.get("affected_with_financial","—") }}</div>
+          <div class="stat-label">With Financial Data</div>
+        </div>
+      </div>
+      {% if rb_impact.get("estimated_regulatory_exposure") %}
+      <div style="background:var(--warn-bg);border:1px solid #FCD34D;border-radius:8px;padding:12px 18px;display:flex;align-items:center;gap:12px">
+        <div style="font-size:22px">&#128181;</div>
+        <div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--warn);margin-bottom:2px">Estimated Regulatory Exposure</div>
+          <div style="font-weight:700;color:var(--navy)">{{ rb_impact.estimated_regulatory_exposure }}</div>
+        </div>
+      </div>
+      {% endif %}
+      {% if rb_impact.get("jurisdictions") and rb_impact.jurisdictions != "Unknown" %}
+      <div style="margin-top:10px;font-size:13px;color:var(--muted)"><strong>Jurisdictions:</strong> {{ rb_impact.jurisdictions }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- STAGE 6: REGULATORY TRIGGERS -->
+    {% if "6" in completed and rb_triggers %}
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">&#9878; Stage 6 — Regulatory Triggers</div>
+        {% if rb_legal.get("notification_required") %}
+        <span class="badge" style="margin-left:auto;background:var(--danger-bg);color:var(--danger);font-weight:700">&#9888; Notification Required</span>
+        {% else %}
+        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+        {% endif %}
+      </div>
+      <table style="margin-bottom:10px">
+        <thead><tr><th>Law</th><th>Triggered</th><th>Deadline</th><th>Notes</th></tr></thead>
+        <tbody>
+        {% for t in rb_triggers %}
+        <tr>
+          <td><span class="badge" style="{{ 'background:var(--danger-bg);color:var(--danger)' if t.triggered else 'background:var(--silver-pale);color:var(--muted)' }}">{{ t.law }}</span></td>
+          <td style="font-weight:700;color:{{ 'var(--danger)' if t.triggered else 'var(--success)' }}">{{ "YES" if t.triggered else "No" }}</td>
+          <td style="font-size:12px;color:var(--navy)">{{ t.deadline or "—" }}</td>
+          <td style="font-size:11px;color:var(--muted)">{{ t.notes or "—" }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if rb_legal.get("earliest_deadline") %}
+      <div style="background:var(--danger-bg);border:1px solid #FECACA;border-radius:8px;padding:10px 16px;font-size:13px">
+        <strong style="color:var(--danger)">Earliest Deadline:</strong>
+        <span style="color:var(--navy);font-weight:700;margin-left:6px">{{ rb_legal.earliest_deadline }}</span>
+        <span style="color:var(--muted);font-size:11px;margin-left:8px">— Verify with qualified legal counsel</span>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- STAGE 7: NOTIFICATION DRAFT -->
+    {% if "7" in completed %}
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">&#128140; Stage 7 — Notification Preparation</div>
+        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div class="stat-card" style="flex:1;max-width:200px">
+          <div class="stat-icon">&#128101;</div>
+          <div class="stat-num">{{ rb_notif_queue_count }}</div>
+          <div class="stat-label">Notifications Queued</div>
+        </div>
+        <div style="flex:1;padding:12px 16px;background:var(--warn-bg);border:1px solid #FCD34D;border-radius:8px;font-size:12px;color:var(--warn);font-weight:600">
+          &#9888; Draft only — no notifications sent. Requires legal review before distribution.
+        </div>
+      </div>
+      {% if rb_notif_draft %}
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">Draft Notification Preview</div>
+      <pre style="max-height:220px;overflow-y:auto;font-size:11px;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:14px">{{ rb_notif_draft[:1200] }}{% if rb_notif_draft|length > 1200 %}&#8230;{% endif %}</pre>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- STAGE 8: REVIEW PACK -->
+    {% if "8" in completed %}
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">&#128230; Stage 8 — Review Pack Generated</div>
+        <span class="badge" style="margin-left:auto;background:var(--success-bg);color:var(--success);font-weight:700">&#10003; Ready for Review</span>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        {% if rb_review_pack_html %}
+        <a href="/exports/{{ engagement_id }}/html" class="btn btn-primary" target="_blank">&#128196; Open HTML Report</a>
+        {% endif %}
+        {% if rb_review_pack_json %}
+        <a href="/exports/{{ engagement_id }}/json" class="btn" style="border:1px solid var(--border)" target="_blank">&#128190; Download JSON Pack</a>
+        {% endif %}
+      </div>
+      <div style="font-size:12px;color:var(--muted)">&#9888; HTML report is print-to-PDF friendly. Open in browser, then File &rarr; Print &rarr; Save as PDF.</div>
+    </div>
+    {% endif %}
+
+    <!-- STAGE 9: DISCLOSURE CHECKLIST -->
+    {% if "9" in completed and rb_disclosure_checklist %}
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">&#9989; Stage 9 — Disclosure Checklist</div>
+        <span class="badge" style="margin-left:auto;background:var(--warn-bg);color:var(--warn);font-weight:700">&#128336; Awaiting Approval</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">All items require human confirmation before engagement closure.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        {% for item in rb_disclosure_checklist %}
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:{{ 'var(--success-bg)' if item.complete else 'var(--bg-2)' }};border:1px solid {{ '#A7F3D0' if item.complete else 'var(--border)' }};border-radius:8px">
+          <div style="width:20px;height:20px;border-radius:4px;border:2px solid {{ 'var(--success)' if item.complete else 'var(--silver)' }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            {% if item.complete %}<span style="color:var(--success);font-size:13px;font-weight:700">&#10003;</span>{% endif %}
+          </div>
+          <span style="font-size:13px;color:var(--navy)">{{ item.item }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- RAW JSON TOGGLE -->
+    {% if completed %}
+    <div style="margin-top:10px">
+      <button class="btn" style="font-size:11px;padding:5px 14px;border:1px solid var(--border);background:transparent;color:var(--muted)" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.textContent.includes('Show')?'Hide Raw JSON':'Show Raw JSON'">Show Raw JSON</button>
+      <div style="display:none;margin-top:10px">
+        <div class="card">
+          <div class="card-header"><div class="card-title">&#128196; Raw Runbook JSON</div></div>
+          <pre style="font-size:11px;max-height:500px;overflow-y:auto">{{ runbook_json }}</pre>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
   </div>
 
   <div class="disclaimer">{{ disclaimer }}</div>
@@ -1788,6 +2099,14 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
                 "icon": TYPE_ICONS.get(cat, "📁"),
                 "size_label": _size_label(f.get("size_bytes", 0)),
             })
+        rb = s.get("runbook", {})
+        # Sensitivity: strip internal _keys
+        rb_sensitivity = {k: v for k, v in rb.get("sensitivity_classification", {}).items() if not k.startswith("_")}
+        # PII kinds as badges
+        rb_pii_kinds = rb.get("normalization_stats", {}).get("pii_kinds", [])
+        # Review pack paths relative to exports dir
+        rb_review_pack_html = rb.get("review_pack_html_path", "")
+        rb_review_pack_json = rb.get("review_pack_path", "")
         return render_template_string(
             DETAIL_TMPL,
             page_title=engagement_id, active_nav="dashboard",
@@ -1798,8 +2117,24 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             all_stages=cfg.get("stages", []),
             client=client,
             vault_files=vault_files,
-            runbook_json=json.dumps(s.get("runbook", {}), indent=2),
+            runbook_json=json.dumps(rb, indent=2),
             disclaimer=LEGAL_DISCLAIMER,
+            # Structured stage data for analysis tab
+            rb_ingest=rb.get("ingest", {}),
+            rb_norm_stats=rb.get("normalization_stats", {}),
+            rb_pii_kinds=rb_pii_kinds,
+            rb_sensitivity=rb_sensitivity,
+            rb_applicable_laws=list(rb.get("applicable_laws", {}).keys()),
+            rb_affected=rb.get("affected_people", []),
+            rb_entity_resolution=rb.get("entity_resolution", {}),
+            rb_impact=rb.get("impact_summary", {}),
+            rb_triggers=rb.get("regulatory_triggers", []),
+            rb_legal=rb.get("legal_determination", {}),
+            rb_notif_queue_count=len(rb.get("notification_queue", [])),
+            rb_notif_draft=rb.get("notification_draft", ""),
+            rb_review_pack_html=rb_review_pack_html,
+            rb_review_pack_json=rb_review_pack_json,
+            rb_disclosure_checklist=rb.get("disclosure_checklist", []),
         )
 
     @app.post("/engagements/<engagement_id>/proceed")
@@ -1942,6 +2277,37 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             response=json.dumps(chat(body.get("message", ""), incident_context)),
             mimetype="application/json",
         )
+
+    @app.get("/exports/<engagement_id>/html")
+    def export_html(engagement_id: str):
+        from flask import send_file
+        s = storage.load_state_obj(engagement_id)
+        if not s:
+            return "Engagement not found", 404
+        rel = s.get("runbook", {}).get("review_pack_html_path", "")
+        if not rel:
+            return "Review pack not yet generated. Run Stage 8 first.", 404
+        # Resolve relative paths from workdir, absolute paths as-is
+        p = Path(rel) if Path(rel).is_absolute() else Path(workdir).parent / rel
+        if not p.exists():
+            return "Review pack file missing. Re-run Stage 8.", 404
+        return send_file(str(p.resolve()), mimetype="text/html", as_attachment=False)
+
+    @app.get("/exports/<engagement_id>/json")
+    def export_json(engagement_id: str):
+        from flask import send_file
+        s = storage.load_state_obj(engagement_id)
+        if not s:
+            return "Engagement not found", 404
+        rel = s.get("runbook", {}).get("review_pack_path", "")
+        if not rel:
+            return "Review pack not yet generated. Run Stage 8 first.", 404
+        p = Path(rel) if Path(rel).is_absolute() else Path(workdir).parent / rel
+        if not p.exists():
+            return "Review pack file missing. Re-run Stage 8.", 404
+        iid = s.get("runbook", {}).get("incident", {}).get("incident_id", engagement_id)
+        return send_file(str(p.resolve()), mimetype="application/json", as_attachment=True,
+                         download_name=f"review-pack-{iid}.json")
 
     return app
 
