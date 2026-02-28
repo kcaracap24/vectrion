@@ -558,8 +558,10 @@ document.getElementById('w-input').addEventListener('keydown',e=>{if(e.key==='En
 INDEX_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Vectorian — Dashboard</title>""" + _CSS + """</head>
-<body>""" + _TOPBAR + """
-<div class="page">
+<body data-page="dashboard">""" + _TOPBAR + """
+<div class="split-wrap">
+<div class="split-main">
+<div class="page" style="padding-top:0">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
     <div>
       <div style="font-size:22px;font-weight:800;color:var(--navy)">Breach Response Dashboard</div>
@@ -650,6 +652,9 @@ INDEX_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     </div>
   </div>
   <div class="disclaimer">{{ disclaimer }}</div>
+</div>
+</div>
+""" + _ROBOT_PANEL + """
 </div>
 </body></html>"""
 
