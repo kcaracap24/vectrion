@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 from typing import Any
 
 _SYSTEM_PROMPT = """You are Vectorian — the AI brain of the Vectorian Breach Response Platform, a professional SaaS solution built for legal teams, compliance officers, privacy counsel, and incident response professionals.
@@ -98,9 +99,19 @@ def _parse_actions(text: str) -> tuple[str, list[dict]]:
     return clean, actions
 
 
+def _get_api_key() -> str:
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        try:
+            key = (Path.home() / ".openai_apikey").read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+    return key
+
+
 def chat(message: str, incident_context: dict[str, Any] | None = None) -> dict:
     """Returns {reply: str, actions: list}."""
-    api_key = os.environ.get("OPENAI_API_KEY", "")
+    api_key = _get_api_key()
     if not api_key:
         return {
             "reply": "Vectorian AI is not configured. Please set the OPENAI_API_KEY environment variable.",
