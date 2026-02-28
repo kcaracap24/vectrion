@@ -483,7 +483,7 @@ _ROBOT_PANEL = """<div class="split-panel" id="vectorian-panel">
       .catch(()=>{hideTyping();addMsg('bot','Unable to reach Vectorian AI.');});
   };
   document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.activeElement===document.getElementById('panel-input'))panelSend();});
-  if(!gH().length)addMsg('bot','Hello, Operator. I\'m Vectorian. I can guide you through the 9-stage breach workflow, answer compliance questions, help configure this platform, or take action for you. What do you need?',[]);
+  if(!gH().length)addMsg('bot',"Hello, Operator. I'm Vectorian. I can guide you through the 9-stage breach workflow, answer compliance questions, help configure this platform, or take action for you. What do you need?",[]);
   else render();
 })();
 </script>"""
