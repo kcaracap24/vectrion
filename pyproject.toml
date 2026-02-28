@@ -20,6 +20,17 @@ dev = [
 postgres = [
   "psycopg[binary]>=3.1,<4.0"
 ]
+ocr = [
+  "pdfplumber>=0.9",
+  "pypdf>=3.0",
+  "python-docx>=1.0",
+  "openpyxl>=3.0",
+  "Pillow>=10.0",
+  "pytesseract>=0.3",
+  "pdf2image>=1.16",
+  "beautifulsoup4>=4.12",
+  "opencv-python>=4.8",
+]
 
 [project.scripts]
 vectrion = "vectrion.cli:main"

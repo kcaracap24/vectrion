@@ -351,6 +351,45 @@ pre{
 .welcome-input:focus{border-color:var(--blue-light)!important;box-shadow:0 0 0 3px rgba(59,130,246,0.2)!important;}
 .btn-enter{background:var(--blue);color:#fff;padding:14px 42px;font-size:14px;font-weight:700;letter-spacing:1.5px;border-radius:10px;text-decoration:none;border:none;cursor:pointer;box-shadow:0 4px 24px rgba(29,78,216,0.5);transition:all 0.15s;display:inline-block;}
 .btn-enter:hover{background:#1a44c4;box-shadow:0 6px 32px rgba(29,78,216,0.65);transform:translateY(-2px);}
+
+/* ── TABS ── */
+.tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:22px;}
+.tab-btn{
+  padding:11px 24px;font-size:13px;font-weight:600;color:var(--muted);
+  border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;
+  margin-bottom:-2px;transition:all 0.15s;letter-spacing:0.3px;
+}
+.tab-btn:hover{color:var(--navy);}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:700;}
+.tab-pane{display:none;}
+.tab-pane.active{display:block;}
+
+/* ── DATA VAULT ── */
+.upload-zone{
+  border:2px dashed var(--border);border-radius:14px;padding:48px 28px;
+  text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg-2);
+  user-select:none;
+}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue);background:var(--blue-pale);}
+.upload-zone-icon{font-size:48px;margin-bottom:14px;}
+.upload-zone-title{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:6px;}
+.upload-zone-sub{font-size:13px;color:var(--muted);}
+.upload-zone input[type=file]{display:none;}
+.security-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;}
+.sec-badge{
+  display:flex;align-items:center;gap:7px;padding:8px 14px;
+  background:var(--white);border:1px solid var(--border);border-radius:8px;
+  font-size:12px;font-weight:600;color:var(--navy);
+}
+.sec-badge-icon{font-size:15px;}
+.fmt-grid{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px;}
+.fmt-chip{
+  padding:4px 10px;background:var(--navy);color:var(--silver-2);
+  border-radius:5px;font-family:monospace;font-size:11px;letter-spacing:0.4px;
+}
+.proc-ok  {color:var(--success);font-weight:600;font-size:12px;}
+.proc-err {color:var(--danger);font-weight:600;font-size:12px;}
+.proc-pend{color:var(--warn);font-weight:600;font-size:12px;}
 </style>"""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1168,7 +1207,7 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
 <div class="split-main">
   <div style="margin-bottom:16px"><a href="/" class="plain">&larr; Back to Dashboard</a></div>
 
-  <!-- Client block -->
+  <!-- Client identity block -->
   <div class="client-block">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:14px">
       <div>
@@ -1209,13 +1248,13 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
       {% if client.breach_type %}
       <div class="client-block-field">
         <span class="client-block-label">Breach Type</span>
-        <span class="client-block-value">{{ client.breach_type }}</span>
+        <span class="client-block-value">{{ client.breach_type if client.breach_type is string else client.breach_type|join(', ') }}</span>
       </div>
       {% endif %}
       {% if client.affected_count %}
       <div class="client-block-field">
         <span class="client-block-label">Est. Affected</span>
-        <span class="client-block-value">{{ client.affected_count | int | format_number }}</span>
+        <span class="client-block-value">{{ client.affected_count | format_number }}</span>
       </div>
       {% endif %}
       {% if client.jurisdictions %}
@@ -1227,45 +1266,266 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     </div>
   </div>
 
-  <!-- Stage progress -->
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">&#9776; Stage Progress</div>
-      <div style="margin-left:auto;font-size:12px;color:var(--muted)">{{ completed|length }}/{{ all_stages|length }} stages complete</div>
-    </div>
-    <div style="margin-bottom:16px">
-      {% for s in all_stages %}
-        <span class="stage-pill{% if s.id in completed %} done{% elif s.id==current_layer %} current{% endif %}">
-          {{ s.id }}: {{ s.custom_name or s.name }}{% if s.id in completed %} &#10003;{% endif %}
-        </span>
-      {% endfor %}
-    </div>
-    {% if current_layer %}
-    <div style="background:var(--blue-pale);border:1px solid #BFDBFE;border-radius:9px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-      <div>
-        <div style="font-weight:700;color:var(--navy)">Next: Stage {{ current_layer }}</div>
-        <div class="muted" style="font-size:12px;margin-top:2px">{{ current_stage_name }}</div>
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">&#9776;&nbsp; Overview</button>
+    <button class="tab-btn" data-tab="vault" onclick="switchTab('vault')">&#128274;&nbsp; Data Vault
+      {% if vault_files %}<span style="margin-left:6px;background:var(--blue);color:#fff;border-radius:999px;font-size:10px;padding:1px 7px;font-weight:700">{{ vault_files|length }}</span>{% endif %}
+    </button>
+    <button class="tab-btn" data-tab="runbook" onclick="switchTab('runbook')">&#128196;&nbsp; Runbook Output</button>
+  </div>
+
+  <!-- TAB: OVERVIEW -->
+  <div class="tab-pane active" id="tab-overview">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">&#9776; Stage Progress</div>
+        <div style="margin-left:auto;font-size:12px;color:var(--muted)">{{ completed|length }}/{{ all_stages|length }} stages complete</div>
       </div>
-      <form method="post" action="/engagements/{{ engagement_id }}/proceed">
-        <button class="btn btn-primary" type="submit">&#9658;&nbsp; Run Stage {{ current_layer }}</button>
-      </form>
+      <div style="margin-bottom:16px">
+        {% for s in all_stages %}
+          <span class="stage-pill{% if s.id in completed %} done{% elif s.id==current_layer %} current{% endif %}">
+            {{ s.id }}: {{ s.custom_name or s.name }}{% if s.id in completed %} &#10003;{% endif %}
+          </span>
+        {% endfor %}
+      </div>
+      {% if current_layer %}
+      <div style="background:var(--blue-pale);border:1px solid #BFDBFE;border-radius:9px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <div style="font-weight:700;color:var(--navy)">Next: Stage {{ current_layer }}</div>
+          <div class="muted" style="font-size:12px;margin-top:2px">{{ current_stage_name }}</div>
+        </div>
+        <form method="post" action="/engagements/{{ engagement_id }}/proceed">
+          <button class="btn btn-primary" type="submit">&#9658;&nbsp; Run Stage {{ current_layer }}</button>
+        </form>
+      </div>
+      {% else %}
+      <div style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:9px;padding:16px 20px;color:var(--success);font-weight:700;font-size:15px">
+        &#10003; All stages complete. Engagement ready for final human review and closure.
+      </div>
+      {% endif %}
     </div>
-    {% else %}
-    <div style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:9px;padding:16px 20px;color:var(--success);font-weight:700;font-size:15px">
-      &#10003; All stages complete. Engagement ready for final human review and closure.
+
+    <!-- Breach & regulatory summary -->
+    {% if client.summary or client.regulations or client.counsel_engaged %}
+    <div class="card">
+      <div class="card-header"><div class="card-title">&#128203; Engagement Summary</div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px">
+        {% if client.summary %}
+        <div>
+          <div class="section-title" style="border:none;padding:0;margin-bottom:8px">Incident Summary</div>
+          <div style="font-size:13px;color:var(--text);line-height:1.7">{{ client.summary }}</div>
+        </div>
+        {% endif %}
+        <div>
+          {% if client.regulations %}
+          <div class="section-title" style="border:none;padding:0;margin-bottom:8px">Regulations</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+            {% for r in client.regulations %}
+            <span class="badge badge-blue">{{ r }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if client.data_types %}
+          <div class="section-title" style="border:none;padding:0;margin-bottom:8px">Data Types</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            {% for d in client.data_types %}
+            <span class="badge badge-warn">{{ d }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% if client.counsel_engaged == 'Yes' %}
+      <div style="margin-top:16px;padding:10px 16px;background:var(--blue-pale);border-radius:8px;border:1px solid #BFDBFE;font-size:13px;color:var(--navy)">
+        &#9878;&nbsp; <strong>Legal counsel engaged</strong>{% if client.law_firm %}: {{ client.law_firm }}{% endif %}
+        {% if client.privilege == 'Yes' %} — <span style="color:var(--blue);font-weight:700">Attorney-Client Privilege</span>{% endif %}
+      </div>
+      {% endif %}
     </div>
     {% endif %}
   </div>
 
-  <!-- Runbook output -->
-  <div class="card">
-    <div class="card-header"><div class="card-title">&#128196; Runbook Output</div></div>
-    <pre>{{ runbook_json }}</pre>
+  <!-- TAB: DATA VAULT -->
+  <div class="tab-pane" id="tab-vault">
+    <!-- Security row -->
+    <div class="security-row">
+      <div class="sec-badge"><div class="sec-badge-icon">&#128274;</div>SHA-256 Chain of Custody</div>
+      <div class="sec-badge"><div class="sec-badge-icon">&#128203;</div>Full Audit Log</div>
+      <div class="sec-badge"><div class="sec-badge-icon">&#128196;</div>Stored Locally Only</div>
+      <div class="sec-badge"><div class="sec-badge-icon">&#9881;</div>Processed On-Premises</div>
+      <div class="sec-badge"><div class="sec-badge-icon">&#128683;</div>Never Transmitted</div>
+    </div>
+
+    <!-- Upload zone -->
+    <div class="upload-zone" id="upload-zone">
+      <input type="file" id="file-input" multiple/>
+      <div class="upload-zone-icon">&#128228;</div>
+      <div class="upload-zone-title">Drop evidence files here or click to browse</div>
+      <div class="upload-zone-sub">All formats processed automatically — no configuration needed</div>
+      <div class="fmt-grid" style="justify-content:center;margin-top:18px">
+        <span class="fmt-chip">PDF</span><span class="fmt-chip">DOCX</span>
+        <span class="fmt-chip">XLSX</span><span class="fmt-chip">CSV</span>
+        <span class="fmt-chip">JSON</span><span class="fmt-chip">XML</span>
+        <span class="fmt-chip">HTML</span><span class="fmt-chip">TXT</span>
+        <span class="fmt-chip">JPG</span><span class="fmt-chip">PNG</span>
+        <span class="fmt-chip">TIFF</span><span class="fmt-chip">MP4</span>
+        <span class="fmt-chip">MOV</span><span class="fmt-chip">AVI</span>
+        <span class="fmt-chip" style="background:var(--navy-4)">+more</span>
+      </div>
+    </div>
+
+    <!-- Files table -->
+    <div class="card" style="padding:0;overflow:hidden;margin-top:22px">
+      <div style="padding:18px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--silver-pale)">
+        <div class="card-title" style="border:none;padding:0;margin:0">&#128190; Ingested Evidence Files</div>
+        <div class="muted" style="font-size:12px" id="file-count">{{ vault_files|length }} file{{ 's' if vault_files|length != 1 else '' }}</div>
+      </div>
+      {% if vault_files or True %}
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36px"></th>
+            <th>File</th>
+            <th style="width:90px">Size</th>
+            <th style="width:130px">Type</th>
+            <th style="width:160px">Extraction</th>
+            <th style="width:100px">Text</th>
+          </tr>
+        </thead>
+        <tbody id="files-tbody">
+          {% for f in vault_files %}
+          <tr>
+            <td style="text-align:center;font-size:18px">{{ f.icon }}</td>
+            <td>
+              <div style="font-weight:600;color:var(--navy)">{{ f.original_name }}</div>
+              <div style="font-size:10px;font-family:monospace;color:var(--silver);margin-top:2px">{{ f.sha256[:20] }}...</div>
+            </td>
+            <td class="muted" style="font-size:12px">{{ f.size_label }}</td>
+            <td><span class="muted" style="font-size:12px">{{ f.type_label }}</span></td>
+            <td>
+              {% if f.error %}
+              <span class="proc-err">&#9888; {{ f.error[:40] }}</span>
+              {% else %}
+              <span class="proc-ok">&#10003; {{ f.method }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not f.error %}
+              <a href="/engagements/{{ engagement_id }}/files/{{ f.filename }}/text" class="plain" target="_blank" style="font-size:12px">View &rarr;</a>
+              {% else %}
+              <span class="muted" style="font-size:12px">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr id="empty-row">
+            <td colspan="6" style="text-align:center;padding:44px 0;color:var(--muted)">
+              <div style="font-size:36px;margin-bottom:10px">&#128228;</div>
+              <div style="font-weight:700;color:var(--navy)">No files uploaded yet</div>
+              <div class="muted" style="margin-top:4px">Drop evidence files above to begin ingestion</div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
   </div>
+
+  <!-- TAB: RUNBOOK -->
+  <div class="tab-pane" id="tab-runbook">
+    <div class="card">
+      <div class="card-header"><div class="card-title">&#128196; Runbook Output</div></div>
+      <pre>{{ runbook_json }}</pre>
+    </div>
+  </div>
+
   <div class="disclaimer">{{ disclaimer }}</div>
 </div>
 """ + _ROBOT_PANEL + """
-</div></body></html>"""
+</div>
+<script>
+// ── Tabs ──
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+}
+
+// ── Upload ──
+const zone = document.getElementById('upload-zone');
+const fileInput = document.getElementById('file-input');
+if (zone) {
+  ['dragenter','dragover'].forEach(ev => zone.addEventListener(ev, e => {e.preventDefault(); zone.classList.add('drag-over');}));
+  ['dragleave','drop'].forEach(ev => zone.addEventListener(ev, e => {e.preventDefault(); zone.classList.remove('drag-over');}));
+  zone.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+  zone.addEventListener('click', e => {if(e.target !== fileInput) fileInput.click();});
+  fileInput.addEventListener('change', e => handleFiles(e.target.files));
+}
+
+function handleFiles(fl) { Array.from(fl).forEach(f => uploadFile(f)); }
+
+function formatSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fileIcon(name) {
+  const e = (name.split('.').pop()||'').toLowerCase();
+  const m = {pdf:'📄',docx:'📄',doc:'📄',txt:'📝',md:'📝',csv:'📊',xlsx:'📊',xls:'📊',
+    json:'📊',jsonl:'📊',xml:'📊',html:'🌐',htm:'🌐',eml:'🌐',
+    jpg:'🖼',jpeg:'🖼',png:'🖼',gif:'🖼',bmp:'🖼',tiff:'🖼',tif:'🖼',webp:'🖼',
+    mp4:'🎥',mov:'🎥',avi:'🎥',mkv:'🎥',wmv:'🎥'};
+  return m[e] || '📁';
+}
+
+function uploadFile(file) {
+  const eid = document.body.dataset.incidentId;
+  const fd = new FormData(); fd.append('file', file);
+  const rowId = 'fr-' + Date.now() + Math.random().toString(36).slice(2);
+  const tbody = document.getElementById('files-tbody');
+  const empty = document.getElementById('empty-row');
+  if (empty) empty.remove();
+  const tr = document.createElement('tr'); tr.id = rowId;
+  tr.innerHTML =
+    '<td style="text-align:center;font-size:18px">' + fileIcon(file.name) + '</td>' +
+    '<td><div style="font-weight:600;color:var(--navy)">' + escHtml(file.name) + '</div></td>' +
+    '<td class="muted" style="font-size:12px">' + formatSize(file.size) + '</td>' +
+    '<td>—</td><td><span class="proc-pend">&#8987; Uploading...</span></td><td>—</td>';
+  tbody.prepend(tr);
+  updateCount(1);
+
+  fetch('/engagements/' + eid + '/upload', {method:'POST', body:fd})
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) {
+        tr.cells[4].innerHTML = '<span class="proc-err">&#9888; ' + escHtml(d.error) + '</span>';
+      } else {
+        tr.cells[0].textContent = fileIcon(d.original_name);
+        tr.cells[1].innerHTML = '<div style="font-weight:600;color:var(--navy)">' + escHtml(d.original_name) + '</div>' +
+          '<div style="font-size:10px;font-family:monospace;color:var(--silver);margin-top:2px">' + d.sha256.substring(0,20) + '...</div>';
+        tr.cells[2].textContent = formatSize(d.size_bytes);
+        tr.cells[3].innerHTML = '<span class="muted" style="font-size:12px">' + escHtml(d.type_label) + '</span>';
+        tr.cells[4].innerHTML = d.proc_error
+          ? '<span class="proc-err">&#9888; ' + escHtml(d.proc_error) + '</span>'
+          : '<span class="proc-ok">&#10003; ' + escHtml(d.method) + '</span>';
+        tr.cells[5].innerHTML = d.proc_error ? '<span class="muted" style="font-size:12px">—</span>'
+          : '<a href="/engagements/' + eid + '/files/' + encodeURIComponent(d.filename) + '/text" class="plain" target="_blank" style="font-size:12px">View &rarr;</a>';
+      }
+    })
+    .catch(() => { tr.cells[4].innerHTML = '<span class="proc-err">Upload failed</span>'; });
+}
+
+function updateCount(delta) {
+  const el = document.getElementById('file-count');
+  if (!el) return;
+  const n = (parseInt(el.dataset.count || el.textContent) || 0) + delta;
+  el.dataset.count = n;
+  el.textContent = n + ' file' + (n !== 1 ? 's' : '');
+}
+</script>
+</body></html>"""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1289,6 +1549,8 @@ def _next_engagement_id(storage: Storage, cfg: dict) -> str:
 
 
 def _format_number(n):
+    if n is None or n == "":
+        return "—"
     try:
         return f"{int(n):,}"
     except Exception:
@@ -1317,6 +1579,35 @@ def _build_engagement_row(p: Path, storage, workdir: str, total_stages: int):
         "pct": pct,
         "created_at": s.get("created_at", "")[:10],
     }
+
+
+def _upload_dir(workdir: str, engagement_id: str) -> Path:
+    d = Path(workdir) / "uploads" / engagement_id
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _load_upload_index(workdir: str, engagement_id: str) -> list:
+    idx = _upload_dir(workdir, engagement_id) / "_index.json"
+    if idx.exists():
+        try:
+            return json.loads(idx.read_text())
+        except Exception:
+            pass
+    return []
+
+
+def _save_upload_index(workdir: str, engagement_id: str, records: list) -> None:
+    idx = _upload_dir(workdir, engagement_id) / "_index.json"
+    idx.write_text(json.dumps(records, indent=2))
+
+
+def _size_label(b: int) -> str:
+    if b < 1024:
+        return f"{b} B"
+    if b < 1_048_576:
+        return f"{b/1024:.1f} KB"
+    return f"{b/1_048_576:.1f} MB"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1486,6 +1777,17 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         cur = s.get("current_layer")
         cfg = load_config(workdir)
         client = s.get("client", {})
+        # Load vault files
+        from vectrion.ingestion import TYPE_ICONS
+        raw_files = _load_upload_index(workdir, engagement_id)
+        vault_files = []
+        for f in raw_files:
+            cat = f.get("type", "unknown")
+            vault_files.append({
+                **f,
+                "icon": TYPE_ICONS.get(cat, "📁"),
+                "size_label": _size_label(f.get("size_bytes", 0)),
+            })
         return render_template_string(
             DETAIL_TMPL,
             page_title=engagement_id, active_nav="dashboard",
@@ -1495,6 +1797,7 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             completed=s.get("completed_layers", []),
             all_stages=cfg.get("stages", []),
             client=client,
+            vault_files=vault_files,
             runbook_json=json.dumps(s.get("runbook", {}), indent=2),
             disclaimer=LEGAL_DISCLAIMER,
         )
@@ -1516,6 +1819,99 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             storage.save_state_obj(engagement_id, s)
             storage.audit(engagement_id, "stage_complete", {"completed": current, "next": s.get("current_layer")})
         return redirect(url_for("engagement_detail", engagement_id=engagement_id))
+
+    @app.post("/engagements/<engagement_id>/upload")
+    def engagement_upload(engagement_id: str):
+        from datetime import datetime
+        from werkzeug.utils import secure_filename
+        from vectrion.ingestion import process_file, ALLOWED_EXTENSIONS, TYPE_ICONS
+
+        s = storage.load_state_obj(engagement_id)
+        if not s:
+            return app.response_class(
+                response=json.dumps({"error": "Engagement not found"}),
+                mimetype="application/json", status=404,
+            )
+
+        uploaded = request.files.get("file")
+        if not uploaded or not uploaded.filename:
+            return app.response_class(
+                response=json.dumps({"error": "No file provided"}),
+                mimetype="application/json", status=400,
+            )
+
+        ext = Path(uploaded.filename).suffix.lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            return app.response_class(
+                response=json.dumps({"error": f"File type '{ext}' not supported"}),
+                mimetype="application/json", status=415,
+            )
+
+        # Build a timestamped safe filename to avoid collisions
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:20]
+        safe_base = secure_filename(Path(uploaded.filename).stem)[:40] or "file"
+        safe_name = f"{safe_base}_{ts}{ext}"
+
+        dest_dir = _upload_dir(workdir, engagement_id)
+        dest = dest_dir / safe_name
+        uploaded.save(str(dest))
+
+        # Process the file
+        result = process_file(dest)
+
+        # Save extracted text alongside original
+        text_path = dest_dir / (safe_name + ".txt")
+        try:
+            text_path.write_text(result["text"] or "", encoding="utf-8")
+        except Exception:
+            pass
+
+        record = {
+            "filename":      safe_name,
+            "original_name": uploaded.filename,
+            "sha256":        result["sha256"],
+            "size_bytes":    result["size_bytes"],
+            "type":          result["type"],
+            "type_label":    result["type_label"],
+            "method":        result["method"],
+            "uploaded_at":   datetime.now().isoformat()[:19],
+            "proc_error":    result["error"],
+        }
+
+        # Append to index
+        records = _load_upload_index(workdir, engagement_id)
+        records.append(record)
+        _save_upload_index(workdir, engagement_id, records)
+
+        storage.audit(engagement_id, "file_ingested", {
+            "filename": safe_name,
+            "original": uploaded.filename,
+            "sha256":   result["sha256"],
+            "method":   result["method"],
+        })
+
+        return app.response_class(
+            response=json.dumps({**record, "engagement_id": engagement_id}),
+            mimetype="application/json",
+        )
+
+    @app.get("/engagements/<engagement_id>/files/<filename>/text")
+    def engagement_file_text(engagement_id: str, filename: str):
+        from werkzeug.utils import secure_filename
+        safe = secure_filename(filename)
+        text_path = _upload_dir(workdir, engagement_id) / (safe + ".txt")
+        if not text_path.exists():
+            return "File not found or not yet processed.", 404
+        text = text_path.read_text(encoding="utf-8", errors="replace")
+        # Return as plain HTML for easy in-browser viewing
+        lines = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        html = (
+            f"<!doctype html><html><head><meta charset='utf-8'/>"
+            f"<title>{safe}</title>"
+            f"<style>body{{font-family:monospace;white-space:pre-wrap;padding:20px;background:#07111D;color:#A8C8E8;font-size:13px;line-height:1.7;}}</style></head>"
+            f"<body>{lines}</body></html>"
+        )
+        return html
 
     # Keep legacy /incidents routes working
     @app.post("/incidents/create")
