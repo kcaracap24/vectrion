@@ -1809,7 +1809,13 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             return redirect(url_for("home"))
         current = s.get("current_layer")
         if current:
-            updated = run_layer(s.get("runbook", {}), current, dd, Path(workdir) / "exports")
+            vault_dir = _upload_dir(workdir, engagement_id)
+            updated = run_layer(
+                s.get("runbook", {}), current, dd, Path(workdir) / "exports",
+                vault_dir=vault_dir,
+                engagement_id=engagement_id,
+                context=s,
+            )
             s["runbook"] = updated
             done = s.get("completed_layers", [])
             if current not in done:

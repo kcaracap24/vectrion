@@ -52,7 +52,13 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         current = s["current_layer"]
         if requested and requested != current:
             return jsonify({"error": "layer gate violation", "expected": current, "got": requested}), 400
-        updated = run_layer(s.get("runbook", {}), current, dd, Path(workdir) / "exports")
+        vault_dir = Path(workdir) / "uploads" / incident_id
+        updated = run_layer(
+            s.get("runbook", {}), current, dd, Path(workdir) / "exports",
+            vault_dir=vault_dir,
+            engagement_id=incident_id,
+            context=s,
+        )
         s["runbook"] = updated
         s["completed_layers"].append(current)
         nxt = next_layer(current)

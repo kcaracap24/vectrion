@@ -1,3 +1,9 @@
+"""Vectorian Runbook Engine
+
+Drives the 9-stage breach response workflow.
+When vault files have been uploaded for an engagement, all stages operate on
+real ingested data.  Falls back to static demo data when no vault files exist.
+"""
 from __future__ import annotations
 
 import csv
@@ -7,187 +13,458 @@ from pathlib import Path
 from vectrion.config_store import get_stage_name, get_stage_order
 from vectrion.constants import LEGAL_DISCLAIMER
 from vectrion.custody import file_sha256
-from vectrion.detectors import detect_pii
+from vectrion.detectors import classify_hits, detect_pii
 from vectrion.identity import explain_identity_match, score_identity_match
 from vectrion.plugins.defaults import DeterministicExtractor, DraftOnlyNotifier
 from vectrion.redaction import redact_text
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _load_csv(path: Path) -> list[dict]:
     with path.open("r", encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
 
-def _review_pack_html(pack: dict) -> str:
-    tl = "".join(
-        f"<tr><td>{r.get('timestamp','')}</td><td>{r.get('event','')}</td></tr>" for r in pack.get("timeline", [])
-    )
-    ids = "".join(
-        f"<tr><td>{r.get('event_id','')}</td><td>{r.get('score','')}</td><td>{r.get('explain','')}</td></tr>"
-        for r in pack.get("identity_scores", [])
-    )
-    return f"""<!doctype html>
-<html><head><meta charset='utf-8'><title>Vectorian Review Pack</title>
-<style>body{{font-family:Arial,sans-serif;margin:24px}} table{{border-collapse:collapse;width:100%}} th,td{{border:1px solid #ddd;padding:8px}} th{{background:#f7f7f7}}</style>
-</head><body>
-<h1>Incident {pack.get('incident',{}).get('incident_id','unknown')}</h1>
-<p><strong>Disclaimer:</strong> {pack.get('disclaimer','')}</p>
-<h2>Timeline</h2><table><tr><th>Timestamp</th><th>Event</th></tr>{tl}</table>
-<h2>Identity Resolution</h2><table><tr><th>Event</th><th>Score</th><th>Explainability</th></tr>{ids}</table>
-<h2>Draft Notification</h2><pre>{pack.get('notification_draft','')}</pre>
-</body></html>"""
-
-
 def _manifest(paths: list[Path]) -> list[dict[str, str]]:
     return [{"path": str(p), "sha256": file_sha256(p)} for p in paths if p.exists()]
 
 
-# Map stage IDs "1"-"9" to legacy runbook letter keys
-_STAGE_TO_LAYER = {
-    "1": "A",
-    "2": "B",
-    "3": "C",
-    "4": "D",
-    "5": "D",   # timeline/custody — same underlying logic as D
-    "6": "E",   # regulatory analysis → draft/notification logic
-    "7": "E",
-    "8": "G",
-    "9": "H",
+def _review_pack_html(pack: dict) -> str:
+    tl = "".join(
+        f"<tr><td>{r.get('timestamp','')}</td><td>{r.get('event','')}</td></tr>"
+        for r in pack.get("timeline", [])
+    )
+    ids = "".join(
+        f"<tr><td>{r.get('event_id','')}</td><td>{r.get('score','')}</td>"
+        f"<td>{r.get('explain','')}</td></tr>"
+        for r in pack.get("identity_scores", [])
+    )
+    cls_rows = "".join(
+        f"<tr><td>{tier}</td><td>{count}</td></tr>"
+        for tier, count in pack.get("sensitivity_classification", {}).items()
+    )
+    aff = "".join(
+        f"<tr><td>{p.get('name','')}</td><td>{p.get('email','')}</td>"
+        f"<td>{p.get('confidence','')}</td></tr>"
+        for p in pack.get("affected_people", [])
+    )
+    return f"""<!doctype html>
+<html><head><meta charset='utf-8'><title>Vectorian Review Pack</title>
+<style>
+  body{{font-family:Arial,sans-serif;margin:24px;color:#1a1a1a;}}
+  h1{{color:#07111D;}} h2{{color:#1D4ED8;border-bottom:2px solid #1D4ED8;padding-bottom:6px;}}
+  table{{border-collapse:collapse;width:100%;margin-bottom:20px;}}
+  th,td{{border:1px solid #ddd;padding:8px;text-align:left;}}
+  th{{background:#f0f4fa;font-weight:700;}}
+  .disclaimer{{font-size:11px;color:#666;border-top:1px solid #ddd;padding-top:10px;margin-top:20px;}}
+  pre{{background:#f5f5f5;padding:14px;border-radius:6px;white-space:pre-wrap;font-size:12px;}}
+</style>
+</head><body>
+<h1>Vectorian Review Pack — {pack.get('incident',{}).get('incident_id','unknown')}</h1>
+<p><strong>Generated:</strong> {pack.get('generated_at','')}</p>
+
+<h2>Incident</h2>
+<pre>{json.dumps(pack.get('incident',{}), indent=2)}</pre>
+
+<h2>Data Sensitivity Classification</h2>
+<table><tr><th>Tier</th><th>Records</th></tr>{cls_rows}</table>
+
+<h2>Affected Individuals ({len(pack.get('affected_people',[]))})</h2>
+<table><tr><th>Name</th><th>Email</th><th>Confidence</th></tr>{aff}</table>
+
+<h2>Timeline</h2>
+<table><tr><th>Timestamp</th><th>Event</th></tr>{tl}</table>
+
+<h2>Identity Resolution Scores</h2>
+<table><tr><th>Record</th><th>Score</th><th>Match Factors</th></tr>{ids}</table>
+
+<h2>Draft Notification</h2>
+<pre>{pack.get('notification_draft','')}</pre>
+
+<p class='disclaimer'>{pack.get('disclaimer','')}</p>
+</body></html>"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VAULT LOADING
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _load_vault_index(vault_dir: Path) -> list[dict]:
+    idx = vault_dir / "_index.json"
+    if idx.exists():
+        try:
+            return json.loads(idx.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return []
+
+
+def _vault_evidence_files(vault_dir: Path, vault_index: list[dict]) -> list[dict]:
+    return [
+        {
+            "path":          str(vault_dir / f["filename"]),
+            "sha256":        f.get("sha256", ""),
+            "original_name": f.get("original_name", f["filename"]),
+            "type_label":    f.get("type_label", ""),
+            "method":        f.get("method", ""),
+        }
+        for f in vault_index
+    ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE MAPPING  numeric id → legacy letter (for internal routing only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_STAGE_TO_LETTER = {
+    "1": "A",  # Confirmed Scope Handoff & Data Intake
+    "2": "B",  # Data Normalization & Structuring
+    "3": "C",  # Sensitive Information Classification
+    "4": "D",  # Entity Resolution & Record Consolidation
+    "5": "E",  # Impact Quantification & Jurisdictional Mapping
+    "6": "F",  # Regulatory Trigger & Legal Determination
+    "7": "G",  # Individual Notification Preparation
+    "8": "H",  # Regulatory Reporting & Filing Preparation
+    "9": "I",  # Public Disclosure & Stakeholder Communication
 }
 
 
-def run_layer(state: dict, layer: str, data_dir: Path, exports_dir: Path) -> dict:
-    # Custom stages return a placeholder
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN ENTRY POINT
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_layer(
+    state: dict,
+    layer: str,
+    data_dir: Path,
+    exports_dir: Path,
+    vault_dir: Path | None = None,
+    engagement_id: str | None = None,
+    context: dict | None = None,
+) -> dict:
+    """
+    Execute one stage of the breach response runbook.
+
+    Args:
+        state:         The runbook sub-state dict (persisted between stages).
+        layer:         Stage ID ("1"–"9" or "custom_*").
+        data_dir:      Path to static demo data directory.
+        exports_dir:   Path for generated export files.
+        vault_dir:     Path to the engagement's vault directory (optional).
+        engagement_id: The engagement ID string (optional, for labelling).
+        context:       Full engagement state dict including client info (optional).
+    """
+
+    # ── Custom stages ────────────────────────────────────────────────────────
     if layer.startswith("custom_"):
         state["last_layer"] = layer
         state["layer_description"] = "Manual step"
         state["status"] = "custom_stage"
-        state["note"] = "This is a custom stage. Complete manually and proceed."
+        state["note"] = "Custom stage — complete manually and proceed."
         return state
 
-    letter = _STAGE_TO_LAYER.get(layer)
+    letter = _STAGE_TO_LETTER.get(layer)
     if letter is None:
         state["last_layer"] = layer
         state["layer_description"] = f"Unknown stage {layer}"
         return state
 
-    incident = state.setdefault("incident", {})
-    evidence = state.setdefault("evidence", [])
+    # Shared sub-state refs
+    incident  = state.setdefault("incident",  {})
+    evidence  = state.setdefault("evidence",  [])
     extracted = state.setdefault("extracted", [])
 
-    if letter == "A":
-        incident_csv = data_dir / "incident.csv"
-        ev_csv = data_dir / "evidence.csv"
-        incident_row = _load_csv(incident_csv)[0]
-        state["incident"] = incident_row
-        state["evidence"] = _load_csv(ev_csv)
-        state["evidence_files"] = [
-            {"path": str(incident_csv), "sha256": file_sha256(incident_csv)},
-            {"path": str(ev_csv), "sha256": file_sha256(ev_csv)},
-        ]
-        state["ingest"] = {
-            "incident_hash": file_sha256(incident_csv),
-            "evidence_hash": file_sha256(ev_csv),
-        }
+    # Resolve vault availability
+    vault_index: list[dict] = []
+    if vault_dir and vault_dir.exists():
+        vault_index = _load_vault_index(vault_dir)
 
+    # Client metadata (for notification drafts and incident labelling)
+    client: dict = {}
+    if context:
+        client = context.get("client", {})
+
+    # ── Stage A — Confirmed Scope Handoff & Data Intake ───────────────────────
+    if letter == "A":
+        if vault_index and vault_dir:
+            from vectrion.normalizer import normalize_vault
+            records = normalize_vault(vault_index, vault_dir)
+
+            state["incident"] = {
+                "incident_id":     engagement_id or context.get("incident_id", "unknown") if context else "unknown",
+                "reporter_name":   client.get("contact_name", ""),
+                "reporter_email":  client.get("contact_email", ""),
+                "reporter_phone":  client.get("contact_phone", ""),
+                "company":         client.get("company_name", ""),
+                "industry":        client.get("industry", ""),
+                "breach_type":     client.get("breach_type", ""),
+                "date_discovered": client.get("date_discovered", ""),
+                "summary":         client.get("summary", ""),
+            }
+            state["evidence"] = records
+            state["evidence_files"] = _vault_evidence_files(vault_dir, vault_index)
+            state["ingest"] = {
+                "source":        "vault",
+                "file_count":    len(vault_index),
+                "record_count":  len(records),
+                "files":         [f.get("original_name") for f in vault_index],
+            }
+        else:
+            # Demo data fallback
+            incident_csv = data_dir / "incident.csv"
+            ev_csv = data_dir / "evidence.csv"
+            incident_row = _load_csv(incident_csv)[0]
+            state["incident"] = incident_row
+            state["evidence"] = _load_csv(ev_csv)
+            state["evidence_files"] = [
+                {"path": str(incident_csv), "sha256": file_sha256(incident_csv)},
+                {"path": str(ev_csv),       "sha256": file_sha256(ev_csv)},
+            ]
+            state["ingest"] = {
+                "source":         "demo",
+                "incident_hash":  file_sha256(incident_csv),
+                "evidence_hash":  file_sha256(ev_csv),
+            }
+
+    # ── Stage B — Data Normalization & Structuring ───────────────────────────
     elif letter == "B":
         extractor = DeterministicExtractor()
         extracted_rows = []
         pii_summary = []
         for row in evidence:
             ex = extractor.extract(row)
+            # Detect PII on all available text fields concatenated
+            full_text = " ".join(filter(None, [
+                ex.get("detail", ""), ex.get("name", ""),
+                ex.get("email", ""), ex.get("phone", ""),
+                ex.get("ssn", ""), ex.get("dob", ""), ex.get("mrn", ""),
+            ]))
             ex["detail_redacted"] = redact_text(ex.get("detail", ""))
-            hits = [h.__dict__ for h in detect_pii(ex.get("detail", ""), event_id=ex.get("event_id", ""))]
-            ex["pii_hits"] = hits
-            pii_summary.extend(hits)
+            hits = detect_pii(full_text, event_id=ex.get("event_id", ""))
+            ex["pii_hits"] = [h.__dict__ for h in hits]
+            ex["pii_tiers"] = classify_hits(hits)
+            pii_summary.extend(ex["pii_hits"])
             extracted_rows.append(ex)
+
         state["extracted"] = extracted_rows
         state["pii_summary"] = pii_summary
+        state["normalization_stats"] = {
+            "records_processed": len(extracted_rows),
+            "total_pii_hits":    len(pii_summary),
+            "pii_kinds":         list({h["kind"] for h in pii_summary}),
+        }
 
+    # ── Stage C — Sensitive Information Classification ───────────────────────
     elif letter == "C":
+        from vectrion.normalizer import summarize_records
+        summary = summarize_records(extracted)
+
+        # Classify each record into sensitivity tier
+        tier_counts: dict[str, int] = {}
+        classified: list[dict] = []
+        for rec in extracted:
+            hits = detect_pii(rec.get("detail", "") or rec.get("raw_text", ""))
+            tiers = classify_hits(hits)
+            primary_tier = tiers[0] if tiers else "Other"
+            tier_counts[primary_tier] = tier_counts.get(primary_tier, 0) + 1
+            classified.append({**rec, "sensitivity_tier": primary_tier, "tiers": tiers})
+
+        state["extracted"] = classified
+        state["sensitivity_classification"] = {
+            **tier_counts,
+            "_total": sum(tier_counts.values()),
+        }
+        state["data_summary"] = summary
+        state["applicable_laws"] = _infer_applicable_laws(tier_counts, client)
+
+    # ── Stage D — Entity Resolution & Record Consolidation ───────────────────
+    elif letter == "D":
         incident_identity = {
-            "name": incident.get("reporter_name", ""),
+            "name":  incident.get("reporter_name", ""),
             "email": incident.get("reporter_email", ""),
             "phone": incident.get("reporter_phone", ""),
         }
         scores = []
-        affected_people = []
+        affected_people: list[dict] = []
+        seen_emails: set[str] = set()
+
         for row in extracted:
-            explain = explain_identity_match(incident_identity, row)
-            score = score_identity_match(incident_identity, row)
-            scores.append(
-                {
-                    "event_id": row.get("event_id"),
-                    "score": score,
+            row_identity = {
+                "name":  row.get("name", ""),
+                "email": row.get("email", ""),
+                "phone": row.get("phone", ""),
+            }
+            explain = explain_identity_match(incident_identity, row_identity)
+            score = explain["score"]
+            scores.append({
+                "event_id":   row.get("event_id") or row.get("record_id", ""),
+                "score":      score,
+                "confidence": explain["confidence"],
+                "factors":    explain["factors"],
+                "explain":    explain["summary"],
+            })
+            # Any record with a real email or SSN counts as an affected person
+            has_id = bool(row.get("email") or row.get("ssn") or row.get("phone"))
+            email_key = (row.get("email") or "").lower()
+            if has_id and email_key not in seen_emails:
+                if email_key:
+                    seen_emails.add(email_key)
+                affected_people.append({
+                    "record_id":  row.get("event_id") or row.get("record_id", ""),
+                    "name":       row.get("name", ""),
+                    "email":      row.get("email", ""),
+                    "phone":      row.get("phone", ""),
+                    "ssn":        "[PRESENT]" if row.get("ssn") else "",
+                    "dob":        "[PRESENT]" if row.get("dob") else "",
+                    "mrn":        "[PRESENT]" if row.get("mrn") else "",
+                    "source":     row.get("source_file", ""),
                     "confidence": explain["confidence"],
-                    "factors": explain["factors"],
-                    "explain": explain["summary"],
-                }
-            )
-            if score >= 0.6:
-                affected_people.append(
-                    {
-                        "event_id": row.get("event_id"),
-                        "name": row.get("name") or incident_identity.get("name", ""),
-                        "email": row.get("email", ""),
-                        "phone": row.get("phone", ""),
-                        "confidence": explain["confidence"],
-                    }
-                )
+                })
+
         state["identity_scores"] = scores
         state["affected_people"] = affected_people
-
-    elif letter == "D":
-        state["timeline"] = [
-            {"timestamp": r.get("timestamp", ""), "event": r.get("subject", "")} for r in extracted
-        ]
-        state["chain_of_custody"] = {
-            "files": state.get("ingest", {}),
-            "records": [
-                {"event_id": r.get("event_id"), "row_hash": file_sha256((data_dir / "evidence.csv"))}
-                for r in extracted[:3]
-            ],
+        state["entity_resolution"] = {
+            "total_records":         len(extracted),
+            "unique_affected_people": len(affected_people),
+            "dedup_emails":          len(seen_emails),
         }
 
+    # ── Stage E — Impact Quantification & Jurisdictional Mapping ────────────
     elif letter == "E":
+        affected = state.get("affected_people", [])
+        sensitivity = state.get("sensitivity_classification", {})
+        timeline = [
+            {"timestamp": r.get("timestamp", ""), "event": r.get("subject", "") or r.get("source_file", "")}
+            for r in extracted
+            if r.get("timestamp") or r.get("subject")
+        ]
+        state["timeline"] = timeline
+        state["impact_summary"] = {
+            "affected_count":         len(affected),
+            "affected_with_ssn":      sum(1 for p in affected if p.get("ssn")),
+            "affected_with_health":   sum(1 for p in affected if p.get("mrn") or p.get("dob")),
+            "affected_with_financial":sum(1 for r in extracted if r.get("cc") or r.get("account")),
+            "sensitivity_breakdown":  {k: v for k, v in sensitivity.items() if not k.startswith("_")},
+            "jurisdictions":          client.get("jurisdictions", "Unknown"),
+            "estimated_regulatory_exposure": _estimate_exposure(len(affected), sensitivity),
+        }
+        state["chain_of_custody"] = {
+            "engagement_id":  engagement_id or "unknown",
+            "evidence_files": state.get("evidence_files", []),
+            "stage_hashes":   {},
+        }
+
+    # ── Stage F — Regulatory Trigger & Legal Determination ──────────────────
+    elif letter == "F":
+        affected_count = len(state.get("affected_people", []))
+        sensitivity = state.get("sensitivity_classification", {})
+        applicable = state.get("applicable_laws", _infer_applicable_laws(sensitivity, client))
+        triggers = []
+        for law, details in applicable.items():
+            triggers.append({
+                "law":              law,
+                "triggered":        details.get("triggered", False),
+                "threshold":        details.get("threshold", ""),
+                "deadline":         details.get("deadline", ""),
+                "filing_required":  details.get("filing_required", False),
+                "notes":            details.get("notes", ""),
+            })
+        state["regulatory_triggers"] = triggers
+        state["notification_required"] = any(t["triggered"] for t in triggers)
+        state["legal_determination"] = {
+            "affected_count":     affected_count,
+            "notification_required": state["notification_required"],
+            "triggered_laws":     [t["law"] for t in triggers if t["triggered"]],
+            "earliest_deadline":  _earliest_deadline(triggers),
+            "note": "This determination requires review by qualified legal counsel.",
+        }
+
+    # ── Stage G — Individual Notification Preparation ────────────────────────
+    elif letter == "G":
         notifier = DraftOnlyNotifier()
-        draft = notifier.draft({"incident_id": incident.get("incident_id", "unknown")})
+        incident_meta = {
+            **incident,
+            "affected_count": len(state.get("affected_people", [])),
+            "jurisdictions":  client.get("jurisdictions", ""),
+            "regulations":    client.get("regulations", []),
+            "breach_type":    client.get("breach_type", ""),
+        }
+        draft = notifier.draft(incident_meta)
         state["notification_draft"] = draft
         state["notification_sent"] = False
+        state["notification_queue"] = [
+            {
+                "recipient_id": p.get("record_id", ""),
+                "name":         p.get("name", "[unknown]"),
+                "email":        p.get("email", ""),
+                "status":       "queued_for_review",
+                "draft":        "See notification_draft field — requires customization per recipient.",
+            }
+            for p in state.get("affected_people", [])[:100]  # cap preview at 100
+        ]
 
-    elif letter == "G":
-        incident_id = incident.get("incident_id", "unknown")
+    # ── Stage H — Regulatory Reporting & Filing Preparation ──────────────────
+    elif letter == "H":
+        from datetime import datetime
+        iid = incident.get("incident_id", engagement_id or "unknown")
         pack = {
-            "incident": incident,
-            "timeline": state.get("timeline", []),
-            "identity_scores": state.get("identity_scores", []),
-            "notification_draft": state.get("notification_draft", ""),
-            "disclaimer": LEGAL_DISCLAIMER,
+            "incident":                    incident,
+            "timeline":                    state.get("timeline", []),
+            "impact_summary":              state.get("impact_summary", {}),
+            "sensitivity_classification":  state.get("sensitivity_classification", {}),
+            "identity_scores":             state.get("identity_scores", []),
+            "affected_people":             state.get("affected_people", []),
+            "regulatory_triggers":         state.get("regulatory_triggers", []),
+            "legal_determination":         state.get("legal_determination", {}),
+            "notification_draft":          state.get("notification_draft", ""),
+            "disclaimer":                  LEGAL_DISCLAIMER,
+            "generated_at":                datetime.utcnow().isoformat() + "Z",
         }
-        json_out = exports_dir / f"review-pack-{incident_id}.json"
-        html_out = exports_dir / f"review-pack-{incident_id}.html"
-        manifest_out = exports_dir / f"review-pack-{incident_id}.manifest.json"
+        json_out     = exports_dir / f"review-pack-{iid}.json"
+        html_out     = exports_dir / f"review-pack-{iid}.html"
+        manifest_out = exports_dir / f"review-pack-{iid}.manifest.json"
         exports_dir.mkdir(parents=True, exist_ok=True)
         json_out.write_text(json.dumps(pack, indent=2), encoding="utf-8")
         html_out.write_text(_review_pack_html(pack), encoding="utf-8")
         manifest = {
-            "incident_id": incident_id,
-            "artifacts": _manifest([json_out, html_out]),
-            "note": "HTML artifact is PDF-print friendly from browser print dialog",
+            "incident_id":   iid,
+            "artifacts":     _manifest([json_out, html_out]),
+            "note":          "HTML artifact is print-to-PDF friendly via browser.",
         }
         manifest_out.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        state["review_pack_path"] = str(json_out)
+        state["review_pack_path"]     = str(json_out)
         state["review_pack_html_path"] = str(html_out)
-        state["review_pack_manifest"] = str(manifest_out)
+        state["review_pack_manifest"]  = str(manifest_out)
 
-    elif letter == "H":
-        state["status"] = "awaiting_human_approval"
-        state["final_note"] = LEGAL_DISCLAIMER
+    # ── Stage I — Public Disclosure & Stakeholder Communication ──────────────
+    elif letter == "I":
+        state["status"] = "awaiting_final_approval"
+        state["disclosure_checklist"] = [
+            {"item": "Press release draft reviewed by legal",           "complete": False},
+            {"item": "Website notice published",                        "complete": False},
+            {"item": "Regulatory filings submitted",                    "complete": False},
+            {"item": "All individual notifications sent",               "complete": False},
+            {"item": "Investor/board communications issued",            "complete": False},
+            {"item": "Internal staff notification sent",                "complete": False},
+            {"item": "Breach response hotline activated",               "complete": False},
+            {"item": "Post-incident review scheduled",                  "complete": False},
+        ]
+        state["final_note"] = (
+            "Final stage reached. All checklist items require human confirmation "
+            "before this engagement can be closed. " + LEGAL_DISCLAIMER
+        )
 
-    state["last_layer"] = layer
+    state["last_layer"]        = layer
     state["layer_description"] = get_stage_name(layer)
     return state
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE NAVIGATION
+# ─────────────────────────────────────────────────────────────────────────────
 
 def next_layer(current: str, workdir: str = ".vectrion") -> str | None:
     order = get_stage_order(workdir)
@@ -195,6 +472,92 @@ def next_layer(current: str, workdir: str = ".vectrion") -> str | None:
         idx = order.index(current)
     except ValueError:
         return None
-    if idx + 1 >= len(order):
-        return None
-    return order[idx + 1]
+    return order[idx + 1] if idx + 1 < len(order) else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REGULATORY ANALYSIS HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _infer_applicable_laws(sensitivity: dict, client: dict) -> dict:
+    """Infer applicable breach notification laws from detected data types and client profile."""
+    regs = client.get("regulations", [])
+    if isinstance(regs, str):
+        regs = [regs]
+    regs_set = {r.upper() for r in regs}
+
+    laws: dict[str, dict] = {}
+
+    has_phi = sensitivity.get("PHI", 0) > 0 or sensitivity.get("PHI/PII", 0) > 0
+    has_pci = sensitivity.get("PCI", 0) > 0
+    has_pii = (sensitivity.get("PII", 0) + sensitivity.get("PHI/PII", 0)) > 0
+    has_eu  = "GDPR" in regs_set or "EU" in str(client.get("jurisdictions", "")).upper()
+    has_ca  = "CALIFORNIA" in str(client.get("jurisdictions", "")).upper() or "CCPA" in regs_set
+
+    if has_phi or "HIPAA" in regs_set:
+        laws["HIPAA"] = {
+            "triggered":       True,
+            "threshold":       "Any PHI access by unauthorized party",
+            "deadline":        "60 days from discovery (individual); annual report if <500/state",
+            "filing_required": True,
+            "notes":           "OCR breach notification required if 500+ affected in any state.",
+        }
+    if has_eu:
+        laws["GDPR"] = {
+            "triggered":       True,
+            "threshold":       "Any personal data breach",
+            "deadline":        "72 hours to supervisory authority",
+            "filing_required": True,
+            "notes":           "Article 33/34 — notify DPA within 72h; notify individuals without undue delay.",
+        }
+    if has_ca:
+        laws["CCPA/CPRA"] = {
+            "triggered":       has_pii,
+            "threshold":       "Unauthorized access to California residents' personal information",
+            "deadline":        "Most expedient time; no more than 30 days recommended",
+            "filing_required": False,
+            "notes":           "AG notification if 500+ Californians affected.",
+        }
+    if has_pci:
+        laws["PCI-DSS"] = {
+            "triggered":       True,
+            "threshold":       "Any cardholder data compromise",
+            "deadline":        "Immediate notification to card brands and acquiring bank",
+            "filing_required": True,
+            "notes":           "Contact Visa/MC/Amex/Discover within 24h of confirmed compromise.",
+        }
+    if has_pii and not laws:
+        laws["State Breach Laws (US)"] = {
+            "triggered":       True,
+            "threshold":       "Varies by state (typically 500 or 1 resident)",
+            "deadline":        "30–90 days depending on state (varies)",
+            "filing_required": False,
+            "notes":           "All 50 states have breach notification laws. Review each applicable state.",
+        }
+    return laws
+
+
+def _earliest_deadline(triggers: list[dict]) -> str:
+    deadlines_priority = ["72 hours", "24h", "30 days", "45 days", "60 days", "90 days"]
+    found = set(t.get("deadline", "") for t in triggers if t.get("triggered"))
+    for d in deadlines_priority:
+        if any(d.lower() in f.lower() for f in found):
+            return d
+    return "Review applicable deadlines with legal counsel"
+
+
+def _estimate_exposure(affected_count: int, sensitivity: dict) -> str:
+    if not affected_count:
+        return "Insufficient data"
+    phi = sensitivity.get("PHI", 0) + sensitivity.get("PHI/PII", 0)
+    pci = sensitivity.get("PCI", 0)
+    base = affected_count * 150  # HIPAA average settlement per record
+    if phi > 0:
+        base = max(base, phi * 200)
+    if pci > 0:
+        base = max(base, pci * 100)
+    if base < 10_000:
+        return f"Est. < $10,000 (limited scope)"
+    if base < 1_000_000:
+        return f"Est. ${base:,.0f} (moderate exposure)"
+    return f"Est. ${base:,.0f}+ (significant — engage legal counsel immediately)"
