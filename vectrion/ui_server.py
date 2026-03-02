@@ -1841,48 +1841,116 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
 
   <!-- TAB: DATA TABLES -->
   <div class="tab-pane" id="tab-tables">
-    <div style="display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:flex-start">
 
-      <!-- Schema sidebar -->
-      <div class="card" style="padding:16px 18px;position:sticky;top:78px">
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--navy-4);margin-bottom:14px">Schema Reference</div>
-        <div style="font-size:12px;font-family:monospace;line-height:2;color:var(--navy)">
-          <div style="color:var(--blue);font-weight:700;margin-top:6px">records</div>
-          <div style="color:var(--muted);font-size:11px;padding-left:8px">record_id, source_file, name<br>email, phone, address<br>has_ssn, has_dob, has_mrn<br>has_cc, has_account<br>sensitivity_tier, pii_hit_count</div>
-          <div style="color:var(--blue);font-weight:700;margin-top:10px">affected_people</div>
-          <div style="color:var(--muted);font-size:11px;padding-left:8px">record_id, name, email, phone<br>has_ssn, has_dob, has_mrn<br>source, confidence</div>
-          <div style="color:var(--blue);font-weight:700;margin-top:10px">pii_detections</div>
-          <div style="color:var(--muted);font-size:11px;padding-left:8px">kind, confidence<br>evidence_ref, source_file<br>record_id</div>
-          <div style="color:var(--blue);font-weight:700;margin-top:10px">regulatory_triggers</div>
-          <div style="color:var(--muted);font-size:11px;padding-left:8px">law, triggered<br>threshold, deadline<br>filing_required, notes</div>
+    <!-- Search context banner -->
+    <div style="background:linear-gradient(135deg,var(--navy-2),var(--navy-3));border:1px solid var(--navy-4);border-radius:12px;padding:18px 22px;margin-bottom:18px;display:flex;gap:14px;align-items:flex-start">
+      <div style="font-size:26px;line-height:1">&#128269;</div>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--silver-2);margin-bottom:6px">Search Context — What are you looking for?</div>
+        <textarea id="search-context" rows="2" placeholder="Describe your search goal — e.g. 'Find all patients with SSNs who were affected by the breach and live in California'" style="width:100%;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);color:#fff;border-radius:7px;padding:9px 13px;font-size:13px;font-family:inherit;resize:none;line-height:1.55"></textarea>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:260px 1fr;gap:18px;align-items:flex-start">
+
+      <!-- ── Left sidebar ── -->
+      <div>
+
+        <!-- Schema card -->
+        <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
+          <div style="padding:11px 16px;background:var(--navy);display:flex;align-items:center">
+            <span style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--silver-2);text-transform:uppercase">Schema</span>
+            <button onclick="toggleAliases()" style="margin-left:auto;background:rgba(255,255,255,0.07);border:1px solid var(--navy-3);color:var(--silver-2);font-size:11px;padding:3px 10px;border-radius:5px;cursor:pointer">&#9881; Rename</button>
+          </div>
+          <div style="padding:12px 14px;font-family:monospace;font-size:11px;line-height:1.85;color:var(--navy)">
+            <div id="schema-tbl-records" class="schema-tbl" style="color:var(--blue);font-weight:700;cursor:pointer" onclick="useTable('records_alias')" title="Click to query this table">&#9654; <span id="lbl-records">records</span></div>
+            <div style="color:var(--muted);padding-left:12px;font-size:10px">record_id, source_file, name<br>email, phone, has_ssn&#42;, has_dob&#42;<br>has_mrn&#42;, has_cc&#42;, sensitivity_tier</div>
+            <div style="color:var(--blue);font-weight:700;margin-top:8px;cursor:pointer" onclick="useTable('affected_alias')" title="Click to query this table">&#9654; <span id="lbl-affected">affected_people</span></div>
+            <div style="color:var(--muted);padding-left:12px;font-size:10px">record_id, name, email, phone<br>has_ssn&#42;, has_dob&#42;, has_mrn&#42;<br>source, confidence</div>
+            <div style="color:var(--blue);font-weight:700;margin-top:8px;cursor:pointer" onclick="useTable('pii_alias')" title="Click to query this table">&#9654; <span id="lbl-pii">pii_detections</span></div>
+            <div style="color:var(--muted);padding-left:12px;font-size:10px">kind, confidence<br>evidence_ref, source_file, record_id</div>
+            <div style="color:var(--blue);font-weight:700;margin-top:8px;cursor:pointer" onclick="useTable('reg_alias')" title="Click to query this table">&#9654; <span id="lbl-reg">regulatory_triggers</span></div>
+            <div style="color:var(--muted);padding-left:12px;font-size:10px">law, triggered&#42;, deadline<br>filing_required&#42;, notes</div>
+            <div style="margin-top:10px;padding:7px 9px;background:var(--bg-2);border-radius:6px;font-size:9px;color:var(--muted);line-height:1.6;border:1px solid var(--border)">&#42; boolean fields: 1 = present, 0 = absent<br>No raw SSN / DOB / card values stored</div>
+          </div>
         </div>
+
+        <!-- Rename panel (hidden by default) -->
+        <div id="alias-panel" style="display:none">
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:11px 16px;background:var(--navy)">
+              <span style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--silver-2);text-transform:uppercase">Rename Tables</span>
+            </div>
+            <div style="padding:14px 16px">
+              <div class="form-group"><label>Records table</label><input type="text" id="alias-records" placeholder="records" style="font-family:monospace"/></div>
+              <div class="form-group"><label>Affected people table</label><input type="text" id="alias-affected" placeholder="affected_people" style="font-family:monospace"/></div>
+              <div class="form-group"><label>PII detections table</label><input type="text" id="alias-pii" placeholder="pii_detections" style="font-family:monospace"/></div>
+              <div class="form-group" style="margin-bottom:14px"><label>Regulatory triggers table</label><input type="text" id="alias-reg" placeholder="regulatory_triggers" style="font-family:monospace"/></div>
+              <button class="btn btn-primary btn-sm" style="width:100%" onclick="saveAliases()">&#10003; Save Names</button>
+            </div>
+          </div>
+        </div>
+
       </div>
 
-      <!-- Query panel -->
+      <!-- ── Right: query area ── -->
       <div>
-        <!-- Preset chips -->
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
-          <span style="font-size:11px;font-weight:700;color:var(--muted);align-self:center;text-transform:uppercase;letter-spacing:1px">Presets:</span>
-          <button class="btn btn-secondary btn-sm" onclick="setPreset('all')">All Records</button>
-          <button class="btn btn-secondary btn-sm" onclick="setPreset('ssn')">Has SSN</button>
-          <button class="btn btn-secondary btn-sm" onclick="setPreset('health')">Health Data</button>
-          <button class="btn btn-secondary btn-sm" onclick="setPreset('financial')">Financial Data</button>
-          <button class="btn btn-secondary btn-sm" onclick="setPreset('pii_type')">PII by Type</button>
-          <button class="btn btn-secondary btn-sm" onclick="setPreset('regulatory')">Regulatory Triggers</button>
+
+        <!-- Quick search -->
+        <div class="card" style="padding:16px 20px;margin-bottom:14px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px">&#128269; Quick Search</div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="qs-text" placeholder="Type any value to search for..." style="flex:3" onkeydown="if(event.key==='Enter')runQuickSearch()"/>
+            <select id="qs-table" style="flex:1;min-width:130px">
+              <option value="records" id="qs-opt-records">records</option>
+              <option value="affected_people" id="qs-opt-affected">affected_people</option>
+              <option value="pii_detections" id="qs-opt-pii">pii_detections</option>
+              <option value="regulatory_triggers" id="qs-opt-reg">regulatory_triggers</option>
+            </select>
+            <button class="btn btn-secondary" onclick="runQuickSearch()">Search</button>
+          </div>
         </div>
 
-        <!-- SQL textarea -->
-        <div class="card" style="padding:14px 16px;margin-bottom:12px">
-          <label style="margin-bottom:6px">SQL Query</label>
-          <textarea id="sql-input" rows="4" style="font-family:monospace;font-size:12px;resize:vertical">SELECT record_id, source_file, name, email, has_ssn, has_dob, has_mrn, sensitivity_tier FROM records ORDER BY source_file;</textarea>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
-            <button class="btn btn-primary" onclick="runSqlQuery()">&#9654;&nbsp; Run Query</button>
-            <span id="query-status" style="font-size:12px;color:var(--muted)"></span>
+        <!-- Preset queries -->
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">Preset Queries</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <button class="btn btn-secondary btn-sm" onclick="setPreset('all')">All Records</button>
+            <button class="btn btn-secondary btn-sm" onclick="setPreset('ssn')">Has SSN</button>
+            <button class="btn btn-secondary btn-sm" onclick="setPreset('health')">Health Data</button>
+            <button class="btn btn-secondary btn-sm" onclick="setPreset('financial')">Financial Data</button>
+            <button class="btn btn-secondary btn-sm" onclick="setPreset('pii_type')">PII by Type</button>
+            <button class="btn btn-secondary btn-sm" onclick="setPreset('regulatory')">Regulatory</button>
+            <button class="btn btn-secondary btn-sm" onclick="setPreset('all_people')">All Affected People</button>
+            <button class="btn btn-secondary btn-sm" onclick="setPreset('crossref')">Cross-Reference</button>
+          </div>
+        </div>
+
+        <!-- SQL editor -->
+        <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+          <div style="padding:10px 16px;background:var(--navy);display:flex;align-items:center;gap:8px">
+            <span style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--silver-2);text-transform:uppercase">SQL Editor</span>
+            <button onclick="copySQL()" style="margin-left:auto;background:rgba(255,255,255,0.07);border:1px solid var(--navy-3);color:var(--silver-2);font-size:11px;padding:3px 10px;border-radius:5px;cursor:pointer">&#128203; Copy</button>
+          </div>
+          <div style="padding:0">
+            <textarea id="sql-input" rows="5" spellcheck="false" style="width:100%;font-family:'Courier New',monospace;font-size:12px;line-height:1.75;resize:vertical;background:var(--navy);color:#93C5FD;border:none;border-bottom:1px solid var(--navy-3);padding:14px 16px;outline:none">SELECT record_id, source_file, name, email, has_ssn, has_dob, has_mrn, sensitivity_tier
+FROM records
+ORDER BY source_file;</textarea>
+            <div style="padding:12px 16px;background:var(--bg-2);border-bottom:1px solid var(--border)">
+              <label style="margin-bottom:5px">Query Note <span style="font-weight:400;text-transform:none;font-size:11px">(describe what this search is looking for)</span></label>
+              <input type="text" id="query-note" placeholder="e.g. Identifying records with SSNs to assess notification scope..."/>
+            </div>
+            <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <button class="btn btn-primary" onclick="runSqlQuery()">&#9654;&nbsp; Run Query</button>
+              <button class="btn btn-secondary" id="csv-btn" onclick="downloadCSV()" style="display:none">&#11015; Export CSV</button>
+              <span id="query-status" style="font-size:12px;color:var(--muted)"></span>
+            </div>
           </div>
         </div>
 
         <!-- Results -->
-        <div id="query-result" style="overflow-x:auto"></div>
+        <div id="query-result"></div>
+
       </div>
     </div>
   </div>
@@ -1899,68 +1967,193 @@ function switchTab(name) {
 }
 
 // ── SQL Table Viewer ──
-const _PRESETS = {
-  all: 'SELECT record_id, source_file, name, email, has_ssn, has_dob, has_mrn, sensitivity_tier FROM records ORDER BY source_file;',
-  ssn: 'SELECT record_id, source_file, name, email, has_ssn, has_dob, sensitivity_tier FROM records WHERE has_ssn = 1;',
-  health: 'SELECT record_id, source_file, name, email, has_mrn, has_dob, diagnosis FROM records WHERE has_mrn=1 OR has_dob=1;',
-  financial: 'SELECT record_id, source_file, name, email, has_cc, has_account, has_routing FROM records WHERE has_cc=1 OR has_account=1;',
-  pii_type: 'SELECT kind, COUNT(*) as count, ROUND(AVG(confidence),2) as avg_conf FROM pii_detections GROUP BY kind ORDER BY count DESC;',
-  regulatory: 'SELECT law, triggered, deadline, filing_required, notes FROM regulatory_triggers;'
-};
-function setPreset(k) {
-  document.getElementById('sql-input').value = _PRESETS[k] || '';
+const _EID = document.body.dataset.incidentId || '';
+let _lastCols = [], _lastRows = [], _sortCol = -1, _sortDir = 1;
+let _aliases = { records: 'records', affected_people: 'affected_people', pii_detections: 'pii_detections', regulatory_triggers: 'regulatory_triggers' };
+
+// Load saved aliases from server on page load
+(function loadAliases(){
+  if (!_EID) return;
+  fetch('/engagements/' + _EID + '/table-aliases')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d && d.aliases) applyAliases(d.aliases); })
+    .catch(() => {});
+})();
+
+function applyAliases(a) {
+  _aliases = Object.assign(_aliases, a);
+  ['records','affected_people','pii_detections','regulatory_triggers'].forEach(k => {
+    const alias = _aliases[k] || k;
+    const lbl = document.getElementById('lbl-' + (k === 'affected_people' ? 'affected' : k === 'pii_detections' ? 'pii' : k === 'regulatory_triggers' ? 'reg' : 'records'));
+    if (lbl) lbl.textContent = alias;
+    const inp = document.getElementById('alias-' + (k === 'affected_people' ? 'affected' : k === 'pii_detections' ? 'pii' : k === 'regulatory_triggers' ? 'reg' : 'records'));
+    if (inp) inp.value = alias !== k ? alias : '';
+    const opt = document.getElementById('qs-opt-' + (k === 'affected_people' ? 'affected' : k === 'pii_detections' ? 'pii' : k === 'regulatory_triggers' ? 'reg' : 'records'));
+    if (opt) { opt.value = alias; opt.textContent = alias; }
+  });
 }
+
+function toggleAliases() {
+  const p = document.getElementById('alias-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+function saveAliases() {
+  const body = {
+    records: document.getElementById('alias-records').value.trim() || 'records',
+    affected_people: document.getElementById('alias-affected').value.trim() || 'affected_people',
+    pii_detections: document.getElementById('alias-pii').value.trim() || 'pii_detections',
+    regulatory_triggers: document.getElementById('alias-reg').value.trim() || 'regulatory_triggers',
+  };
+  fetch('/engagements/' + _EID + '/table-aliases', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+  }).then(r => r.json()).then(d => {
+    if (d.ok) { applyAliases(d.aliases); toggleAliases(); }
+  });
+}
+
+function useTable(aliasKey) {
+  const tbl = aliasKey === 'records_alias' ? (_aliases.records||'records')
+    : aliasKey === 'affected_alias' ? (_aliases.affected_people||'affected_people')
+    : aliasKey === 'pii_alias' ? (_aliases.pii_detections||'pii_detections')
+    : (_aliases.regulatory_triggers||'regulatory_triggers');
+  document.getElementById('sql-input').value = 'SELECT * FROM "' + tbl + '" LIMIT 100;';
+}
+
+function getAlias(key) { return _aliases[key] || key; }
+
+const _PRESETS = {
+  all: () => `SELECT record_id, source_file, name, email, has_ssn, has_dob, has_mrn, sensitivity_tier\nFROM "${getAlias('records')}"\nORDER BY source_file;`,
+  ssn: () => `SELECT record_id, source_file, name, email, has_ssn, has_dob, sensitivity_tier\nFROM "${getAlias('records')}"\nWHERE has_ssn = 1\nORDER BY name;`,
+  health: () => `SELECT record_id, source_file, name, email, has_mrn, has_dob, diagnosis\nFROM "${getAlias('records')}"\nWHERE has_mrn = 1 OR has_dob = 1\nORDER BY name;`,
+  financial: () => `SELECT record_id, source_file, name, email, has_cc, has_account, has_routing\nFROM "${getAlias('records')}"\nWHERE has_cc = 1 OR has_account = 1\nORDER BY name;`,
+  pii_type: () => `SELECT kind, COUNT(*) AS count, ROUND(AVG(confidence), 2) AS avg_conf\nFROM "${getAlias('pii_detections')}"\nGROUP BY kind\nORDER BY count DESC;`,
+  regulatory: () => `SELECT law, triggered, deadline, filing_required, notes\nFROM "${getAlias('regulatory_triggers')}";`,
+  all_people: () => `SELECT record_id, name, email, phone, has_ssn, has_dob, has_mrn, source, confidence\nFROM "${getAlias('affected_people')}"\nORDER BY name;`,
+  crossref: () => `SELECT r.name, r.email, r.has_ssn, r.has_mrn, r.sensitivity_tier,\n       p.kind, p.confidence\nFROM "${getAlias('records')}" r\nJOIN "${getAlias('pii_detections')}" p ON r.record_id = p.record_id\nORDER BY r.name;`,
+};
+
+function setPreset(k) {
+  if (_PRESETS[k]) document.getElementById('sql-input').value = _PRESETS[k]();
+}
+
+function runQuickSearch() {
+  const q = document.getElementById('qs-text').value.trim();
+  const tbl = document.getElementById('qs-table').value;
+  if (!q) return;
+  const cols = {
+    [_aliases.records||'records']: ['name','email','phone','source_file','record_id'],
+    [_aliases.affected_people||'affected_people']: ['name','email','phone','record_id','source'],
+    [_aliases.pii_detections||'pii_detections']: ['kind','evidence_ref','source_file','record_id'],
+    [_aliases.regulatory_triggers||'regulatory_triggers']: ['law','deadline','notes'],
+  };
+  const searchCols = cols[tbl] || ['name','email'];
+  const where = searchCols.map(c => `"${c}" LIKE '%${q.replace(/'/g,"''")}%'`).join(' OR ');
+  document.getElementById('sql-input').value = `SELECT *\nFROM "${tbl}"\nWHERE ${where}\nLIMIT 200;`;
+  document.getElementById('query-note').value = `Quick search for "${q}" in ${tbl}`;
+  runSqlQuery();
+}
+
+function copySQL() {
+  const t = document.getElementById('sql-input').value;
+  navigator.clipboard.writeText(t).catch(() => {});
+}
+
+function downloadCSV() {
+  if (!_lastCols.length) return;
+  let csv = _lastCols.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',') + '\n';
+  _lastRows.forEach(row => {
+    csv += row.map(c => '"' + String(c === null ? '' : c).replace(/"/g,'""') + '"').join(',') + '\n';
+  });
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'query-results.csv';
+  a.click();
+}
+
+function sortResults(colIdx) {
+  if (_sortCol === colIdx) _sortDir *= -1;
+  else { _sortCol = colIdx; _sortDir = 1; }
+  _lastRows.sort((a, b) => {
+    const av = a[colIdx], bv = b[colIdx];
+    if (av === bv) return 0;
+    if (av === null) return 1; if (bv === null) return -1;
+    return (av < bv ? -1 : 1) * _sortDir;
+  });
+  renderResults(_lastCols, _lastRows, document.getElementById('query-result').dataset.rowTotal);
+}
+
+function renderResults(cols, rows, total) {
+  const rid = document.getElementById('record-id-col-idx');
+  const ridIdx = cols.indexOf('record_id');
+  let html = `<div class="card" style="padding:0;overflow:hidden">`;
+  html += `<div style="padding:10px 16px;background:var(--bg-2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">`;
+  html += `<span style="font-size:12px;font-weight:700;color:var(--navy)">${rows.length} row${rows.length !== 1 ? 's' : ''}</span>`;
+  const note = document.getElementById('query-note').value.trim();
+  if (note) html += `<span style="font-size:11px;color:var(--muted);font-style:italic">&mdash; ${escHtml(note)}</span>`;
+  html += `</div>`;
+  html += `<div style="overflow-x:auto"><table><thead><tr>`;
+  cols.forEach((c, i) => {
+    const arrow = _sortCol === i ? (_sortDir === 1 ? ' &#9650;' : ' &#9660;') : '';
+    html += `<th style="cursor:pointer;user-select:none" onclick="sortResults(${i})">${escHtml(c)}${arrow}</th>`;
+  });
+  if (ridIdx >= 0) html += `<th></th>`;
+  html += `</tr></thead><tbody>`;
+  rows.forEach(row => {
+    html += `<tr>`;
+    row.forEach((cell, i) => {
+      let display;
+      if (cell === null) display = `<span style="color:var(--silver);font-style:italic">null</span>`;
+      else if ((cols[i]==='has_ssn'||cols[i]==='has_dob'||cols[i]==='has_mrn'||cols[i]==='has_cc'||cols[i]==='has_account'||cols[i]==='has_routing'||cols[i]==='has_insurance_id'||cols[i]==='triggered'||cols[i]==='filing_required') && (cell===0||cell===1||cell==='0'||cell==='1'))
+        display = cell==1||cell==='1' ? `<span style="color:var(--success);font-weight:700">&#10003; YES</span>` : `<span style="color:var(--muted)">&#8212; no</span>`;
+      else display = escHtml(String(cell));
+      html += `<td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(String(cell??''))}">${display}</td>`;
+    });
+    if (ridIdx >= 0) {
+      const rid2 = row[ridIdx];
+      html += rid2 ? `<td><a href="/engagements/${encodeURIComponent(_EID)}/discovery/${encodeURIComponent(rid2)}" target="_blank" style="font-size:11px;white-space:nowrap">&#128269;</a></td>` : `<td></td>`;
+    }
+    html += `</tr>`;
+  });
+  html += `</tbody></table></div></div>`;
+  const el = document.getElementById('query-result');
+  el.innerHTML = html;
+  el.dataset.rowTotal = total || rows.length;
+}
+
 function runSqlQuery() {
   const sql = document.getElementById('sql-input').value.trim();
   if (!sql) return;
-  const eid = document.body.dataset.incidentId;
   const status = document.getElementById('query-status');
   const result = document.getElementById('query-result');
+  const csvBtn = document.getElementById('csv-btn');
   status.textContent = 'Running\u2026';
   result.innerHTML = '';
-  fetch('/engagements/' + eid + '/query', {
+  csvBtn.style.display = 'none';
+  const t0 = Date.now();
+  fetch('/engagements/' + _EID + '/query', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({sql: sql})
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({sql})
   })
   .then(r => r.json())
   .then(d => {
-    status.textContent = '';
+    const ms = Date.now() - t0;
     if (d.error) {
-      result.innerHTML = '<div style="color:var(--danger);padding:12px;background:var(--danger-bg);border-radius:8px;font-size:13px">\u26A0 ' + escHtml(d.error) + '</div>';
+      status.textContent = '';
+      result.innerHTML = `<div style="padding:14px 18px;background:var(--danger-bg);border:1px solid #FECACA;border-radius:9px;color:var(--danger);font-size:13px;font-family:monospace">&#9888; ${escHtml(d.error)}</div>`;
       return;
     }
-    const cols = d.columns || [];
-    const rows = d.rows || [];
-    // Detect if record_id column exists for discovery links
-    const ridIdx = cols.indexOf('record_id');
-    let html = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">' + rows.length + ' row' + (rows.length !== 1 ? 's' : '') + '</div>';
-    html += '<div class="card" style="padding:0;overflow:hidden"><table><thead><tr>';
-    cols.forEach(c => { html += '<th>' + escHtml(c) + '</th>'; });
-    if (ridIdx >= 0) html += '<th></th>';
-    html += '</tr></thead><tbody>';
-    rows.forEach(row => {
-      html += '<tr>';
-      row.forEach(cell => {
-        const display = cell === null ? '<span class="muted">NULL</span>' : escHtml(String(cell));
-        html += '<td style="font-size:12px">' + display + '</td>';
-      });
-      if (ridIdx >= 0) {
-        const rid = row[ridIdx];
-        if (rid) {
-          html += '<td><a href="/engagements/' + encodeURIComponent(eid) + '/discovery/' + encodeURIComponent(rid) + '" target="_blank" style="font-size:11px;white-space:nowrap">&#128269; Source</a></td>';
-        } else {
-          html += '<td></td>';
-        }
-      }
-      html += '</tr>';
-    });
-    html += '</tbody></table></div>';
-    result.innerHTML = html;
+    _lastCols = d.columns || [];
+    _lastRows = d.rows || [];
+    _sortCol = -1; _sortDir = 1;
+    status.textContent = `${_lastRows.length} row${_lastRows.length !== 1 ? 's' : ''} \u00B7 ${ms}ms`;
+    csvBtn.style.display = _lastRows.length ? 'inline-flex' : 'none';
+    renderResults(_lastCols, _lastRows, _lastRows.length);
   })
   .catch(e => {
     status.textContent = '';
-    result.innerHTML = '<div style="color:var(--danger);padding:12px;background:var(--danger-bg);border-radius:8px;font-size:13px">Query failed: ' + escHtml(e.message) + '</div>';
+    result.innerHTML = `<div style="padding:14px 18px;background:var(--danger-bg);border-radius:9px;color:var(--danger);font-size:13px">Query failed: ${escHtml(e.message)}</div>`;
   });
 }
 
@@ -2172,7 +2365,7 @@ def _sensitive_bool(v) -> int:
     return 1
 
 
-def _build_sqlite_db(runbook: dict):
+def _build_sqlite_db(runbook: dict, aliases: dict | None = None) -> sqlite3.Connection:
     """Build an in-memory SQLite DB from the runbook. Sensitive fields are boolean."""
     conn = sqlite3.connect(":memory:")
     c = conn.cursor()
@@ -2264,6 +2457,16 @@ def _build_sqlite_db(runbook: dict):
                 t.get("notes", ""),
             ),
         )
+
+    # Create alias views so queries can use configured table names
+    if aliases:
+        for base, alias in aliases.items():
+            alias = (alias or "").strip()
+            if alias and alias != base:
+                try:
+                    conn.execute(f'CREATE VIEW IF NOT EXISTS "{alias}" AS SELECT * FROM "{base}"')
+                except Exception:
+                    pass
 
     conn.commit()
     return conn
@@ -2449,6 +2652,7 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
                 "size_label": _size_label(f.get("size_bytes", 0)),
             })
         rb = s.get("runbook", {})
+        table_aliases = s.get("table_aliases", {})
         # Sensitivity: strip internal _keys
         rb_sensitivity = {k: v for k, v in rb.get("sensitivity_classification", {}).items() if not k.startswith("_")}
         # PII kinds as badges
@@ -2484,6 +2688,7 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             rb_review_pack_html=rb_review_pack_html,
             rb_review_pack_json=rb_review_pack_json,
             rb_disclosure_checklist=rb.get("disclosure_checklist", []),
+            table_aliases=table_aliases,
         )
 
     @app.post("/engagements/<engagement_id>/proceed")
@@ -2658,6 +2863,25 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         return send_file(str(p.resolve()), mimetype="application/json", as_attachment=True,
                          download_name=f"review-pack-{iid}.json")
 
+    # ── TABLE ALIASES ─────────────────────────────────────────────────────────
+    @app.get("/engagements/<engagement_id>/table-aliases")
+    def engagement_table_aliases_get(engagement_id: str):
+        s = storage.load_state_obj(engagement_id)
+        aliases = s.get("table_aliases", {}) if s else {}
+        return app.response_class(response=json.dumps({"aliases": aliases}), mimetype="application/json")
+
+    @app.post("/engagements/<engagement_id>/table-aliases")
+    def engagement_table_aliases(engagement_id: str):
+        s = storage.load_state_obj(engagement_id)
+        if not s:
+            return redirect(url_for("home"))
+        body = request.get_json(force=True, silent=True) or {}
+        allowed = {"records", "affected_people", "pii_detections", "regulatory_triggers"}
+        aliases = {k: v.strip() for k, v in body.items() if k in allowed and isinstance(v, str)}
+        s["table_aliases"] = aliases
+        storage.save_state_obj(engagement_id, s)
+        return app.response_class(response=json.dumps({"ok": True, "aliases": aliases}), mimetype="application/json")
+
     # ── STAGE RE-RUN ──────────────────────────────────────────────────────────
     @app.post("/engagements/<engagement_id>/rerun/<stage>")
     def engagement_rerun(engagement_id: str, stage: str):
@@ -2706,7 +2930,8 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             )
         rb = s.get("runbook", {})
         try:
-            conn = _build_sqlite_db(rb)
+            aliases = s.get("table_aliases", {})
+            conn = _build_sqlite_db(rb, aliases)
             cur = conn.execute(sql)
             columns = [d[0] for d in (cur.description or [])]
             rows = [list(r) for r in cur.fetchall()]
