@@ -1366,10 +1366,15 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
 
     <!-- Upload zone -->
     <div class="upload-zone" id="upload-zone">
-      <input type="file" id="file-input" multiple/>
+      <input type="file" id="file-input" multiple style="display:none"/>
+      <input type="file" id="folder-input" webkitdirectory multiple style="display:none"/>
       <div class="upload-zone-icon">&#128228;</div>
-      <div class="upload-zone-title">Drop evidence files here or click to browse</div>
-      <div class="upload-zone-sub">All formats processed automatically — no configuration needed</div>
+      <div class="upload-zone-title">Drop files or folders here</div>
+      <div class="upload-zone-sub">All formats processed automatically — drop a whole folder to ingest everything at once</div>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:14px">
+        <button type="button" onclick="document.getElementById('file-input').click()" class="btn btn-secondary" style="font-size:12px;padding:7px 18px">&#128196; Browse Files</button>
+        <button type="button" onclick="document.getElementById('folder-input').click()" class="btn btn-secondary" style="font-size:12px;padding:7px 18px">&#128193; Browse Folder</button>
+      </div>
       <div class="fmt-grid" style="justify-content:center;margin-top:18px">
         <span class="fmt-chip">PDF</span><span class="fmt-chip">DOCX</span>
         <span class="fmt-chip">XLSX</span><span class="fmt-chip">CSV</span>
@@ -1771,12 +1776,36 @@ function switchTab(name) {
 // ── Upload ──
 const zone = document.getElementById('upload-zone');
 const fileInput = document.getElementById('file-input');
+const folderInput = document.getElementById('folder-input');
 if (zone) {
   ['dragenter','dragover'].forEach(ev => zone.addEventListener(ev, e => {e.preventDefault(); zone.classList.add('drag-over');}));
   ['dragleave','drop'].forEach(ev => zone.addEventListener(ev, e => {e.preventDefault(); zone.classList.remove('drag-over');}));
-  zone.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
-  zone.addEventListener('click', e => {if(e.target !== fileInput) fileInput.click();});
+  zone.addEventListener('drop', e => {
+    if (e.dataTransfer.items && e.dataTransfer.items.length) {
+      const entries = Array.from(e.dataTransfer.items).map(i => i.webkitGetAsEntry()).filter(Boolean);
+      entries.forEach(processEntry);
+    } else {
+      handleFiles(e.dataTransfer.files);
+    }
+  });
   fileInput.addEventListener('change', e => handleFiles(e.target.files));
+  folderInput.addEventListener('change', e => handleFiles(e.target.files));
+}
+
+function processEntry(entry) {
+  if (entry.isFile) {
+    entry.file(f => uploadFile(f));
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    function readBatch() {
+      reader.readEntries(entries => {
+        if (!entries.length) return;
+        entries.forEach(processEntry);
+        readBatch(); // readEntries returns max 100 at a time
+      });
+    }
+    readBatch();
+  }
 }
 
 function handleFiles(fl) { Array.from(fl).forEach(f => uploadFile(f)); }
