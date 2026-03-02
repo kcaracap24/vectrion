@@ -1290,33 +1290,41 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="card">
       <div class="card-header">
         <div class="card-title">&#9776; Stage Progress</div>
-        <div style="margin-left:auto;font-size:12px;color:var(--muted)">{{ completed|length }}/{{ all_stages|length }} stages complete</div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:18px">
-        {% for s in all_stages %}
-        <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;
-          {% if s.id in completed %}background:#F0FDF4;border:1px solid #A7F3D0;
-          {% elif s.id==current_layer %}background:#EFF6FF;border:1px solid #BFDBFE;
-          {% else %}background:var(--bg-2);border:1px solid var(--border);{% endif %}">
-          <span style="font-size:11px;font-weight:700;min-width:18px;text-align:center;
-            {% if s.id in completed %}color:var(--success);{% elif s.id==current_layer %}color:var(--blue);{% else %}color:var(--muted);{% endif %}">
-            {% if s.id in completed %}&#10003;{% elif s.id==current_layer %}&#9654;{% else %}&#9675;{% endif %}
-          </span>
-          <span style="font-size:13px;font-weight:{% if s.id==current_layer %}700{% else %}500{% endif %};
-            {% if s.id in completed %}color:var(--navy);{% elif s.id==current_layer %}color:var(--blue);{% else %}color:var(--muted);{% endif %}">
-            Stage {{ s.id }}: {{ s.custom_name or s.name }}
-          </span>
-          {% if s.id in completed %}
-          <form method="post" action="/engagements/{{ engagement_id }}/rerun/{{ s.id }}" style="margin-left:auto;display:inline"
-                onsubmit="return confirm('Re-run Stage {{ s.id }}? This will clear all downstream stage results.')">
-            <button type="submit" class="btn" style="font-size:11px;padding:3px 12px;border:1px solid var(--border);background:white;color:var(--navy)">
-              &#8635; Re-run
-            </button>
-          </form>
-          {% elif s.id==current_layer %}
-          <span style="margin-left:auto;font-size:11px;font-weight:700;color:var(--blue);letter-spacing:0.5px">CURRENT</span>
-          {% endif %}
+        <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+          <div style="font-size:12px;color:var(--muted)">{{ completed|length }}/{{ all_stages|length }} complete</div>
         </div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+        &#9998;&nbsp; Click any completed stage to go back and update it
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px">
+        {% for s in all_stages %}
+
+        {% if s.id in completed %}
+        <form method="post" action="/engagements/{{ engagement_id }}/rerun/{{ s.id }}">
+          <button type="submit" style="width:100%;display:flex;align-items:center;gap:14px;padding:13px 18px;border-radius:10px;cursor:pointer;text-align:left;background:#F0FDF4;border:2px solid #A7F3D0;transition:all 0.15s;" onmouseover="this.style.background='#DCFCE7';this.style.borderColor='#059669';this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(5,150,105,0.15)'" onmouseout="this.style.background='#F0FDF4';this.style.borderColor='#A7F3D0';this.style.transform='';this.style.boxShadow=''">
+            <span style="width:30px;height:30px;border-radius:50%;background:var(--success);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0">&#10003;</span>
+            <span style="flex:1;font-size:13px;font-weight:600;color:var(--navy)">Stage {{ s.id }}: {{ s.custom_name or s.name }}</span>
+            <span style="font-size:12px;color:var(--success);font-weight:700;white-space:nowrap;display:flex;align-items:center;gap:5px">
+              &#8592; Go Back &amp; Update
+            </span>
+          </button>
+        </form>
+
+        {% elif s.id == current_layer %}
+        <div style="display:flex;align-items:center;gap:14px;padding:13px 18px;border-radius:10px;background:#EFF6FF;border:2px solid var(--blue);">
+          <span style="width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0">{{ s.id }}</span>
+          <span style="flex:1;font-size:13px;font-weight:700;color:var(--blue)">Stage {{ s.id }}: {{ s.custom_name or s.name }}</span>
+          <span style="font-size:10px;background:var(--blue);color:#fff;padding:3px 11px;border-radius:999px;font-weight:700;letter-spacing:1px">UP NEXT</span>
+        </div>
+
+        {% else %}
+        <div style="display:flex;align-items:center;gap:14px;padding:13px 18px;border-radius:10px;background:var(--bg-2);border:1px solid var(--border);opacity:0.55;">
+          <span style="width:30px;height:30px;border-radius:50%;background:var(--silver-pale);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">{{ s.id }}</span>
+          <span style="font-size:13px;color:var(--muted)">Stage {{ s.id }}: {{ s.custom_name or s.name }}</span>
+        </div>
+        {% endif %}
+
         {% endfor %}
       </div>
       {% if current_layer %}
