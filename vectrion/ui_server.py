@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from pathlib import Path
+from urllib.parse import quote as _url_quote, unquote as _url_unquote
 
 from flask import Flask, redirect, render_template_string, request, url_for
 
@@ -1280,6 +1282,7 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <button class="tab-btn" data-tab="runbook" onclick="switchTab('runbook')">&#128200;&nbsp; Analysis
       {% if completed %}<span style="margin-left:6px;background:var(--success);color:#fff;border-radius:999px;font-size:10px;padding:1px 7px;font-weight:700">{{ completed|length }}</span>{% endif %}
     </button>
+    <button class="tab-btn" data-tab="tables" onclick="switchTab('tables')">&#128202;&nbsp; Data Tables</button>
   </div>
 
   <!-- TAB: OVERVIEW -->
@@ -1289,11 +1292,31 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
         <div class="card-title">&#9776; Stage Progress</div>
         <div style="margin-left:auto;font-size:12px;color:var(--muted)">{{ completed|length }}/{{ all_stages|length }} stages complete</div>
       </div>
-      <div style="margin-bottom:16px">
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:18px">
         {% for s in all_stages %}
-          <span class="stage-pill{% if s.id in completed %} done{% elif s.id==current_layer %} current{% endif %}">
-            {{ s.id }}: {{ s.custom_name or s.name }}{% if s.id in completed %} &#10003;{% endif %}
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;
+          {% if s.id in completed %}background:#F0FDF4;border:1px solid #A7F3D0;
+          {% elif s.id==current_layer %}background:#EFF6FF;border:1px solid #BFDBFE;
+          {% else %}background:var(--bg-2);border:1px solid var(--border);{% endif %}">
+          <span style="font-size:11px;font-weight:700;min-width:18px;text-align:center;
+            {% if s.id in completed %}color:var(--success);{% elif s.id==current_layer %}color:var(--blue);{% else %}color:var(--muted);{% endif %}">
+            {% if s.id in completed %}&#10003;{% elif s.id==current_layer %}&#9654;{% else %}&#9675;{% endif %}
           </span>
+          <span style="font-size:13px;font-weight:{% if s.id==current_layer %}700{% else %}500{% endif %};
+            {% if s.id in completed %}color:var(--navy);{% elif s.id==current_layer %}color:var(--blue);{% else %}color:var(--muted);{% endif %}">
+            Stage {{ s.id }}: {{ s.custom_name or s.name }}
+          </span>
+          {% if s.id in completed %}
+          <form method="post" action="/engagements/{{ engagement_id }}/rerun/{{ s.id }}" style="margin-left:auto;display:inline"
+                onsubmit="return confirm('Re-run Stage {{ s.id }}? This will clear all downstream stage results.')">
+            <button type="submit" class="btn" style="font-size:11px;padding:3px 12px;border:1px solid var(--border);background:white;color:var(--navy)">
+              &#8635; Re-run
+            </button>
+          </form>
+          {% elif s.id==current_layer %}
+          <span style="margin-left:auto;font-size:11px;font-weight:700;color:var(--blue);letter-spacing:0.5px">CURRENT</span>
+          {% endif %}
+        </div>
         {% endfor %}
       </div>
       {% if current_layer %}
@@ -1461,7 +1484,12 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <div class="card-title">&#128229; Stage 1 — Data Intake</div>
-        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="badge badge-blue">Complete</span>
+          <form method="post" action="/engagements/{{ engagement_id }}/rerun/1" style="display:inline">
+            <button class="btn" style="font-size:11px;padding:4px 12px;border:1px solid var(--border)">&#8635; Re-run</button>
+          </form>
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:4px">
         <div class="stat-card">
@@ -1495,7 +1523,12 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <div class="card-title">&#128269; Stage 2 — PII Detection &amp; Normalization</div>
-        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="badge badge-blue">Complete</span>
+          <form method="post" action="/engagements/{{ engagement_id }}/rerun/2" style="display:inline">
+            <button class="btn" style="font-size:11px;padding:4px 12px;border:1px solid var(--border)">&#8635; Re-run</button>
+          </form>
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:10px">
         <div class="stat-card">
@@ -1529,7 +1562,12 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <div class="card-title">&#127777; Stage 3 — Sensitivity Classification</div>
-        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="badge badge-blue">Complete</span>
+          <form method="post" action="/engagements/{{ engagement_id }}/rerun/3" style="display:inline">
+            <button class="btn" style="font-size:11px;padding:4px 12px;border:1px solid var(--border)">&#8635; Re-run</button>
+          </form>
+        </div>
       </div>
       <table style="margin-bottom:10px">
         <thead><tr><th>Tier</th><th>Records</th></tr></thead>
@@ -1565,7 +1603,12 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <div class="card-title">&#128101; Stage 4 — Entity Resolution</div>
-        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="badge badge-blue">Complete</span>
+          <form method="post" action="/engagements/{{ engagement_id }}/rerun/4" style="display:inline">
+            <button class="btn" style="font-size:11px;padding:4px 12px;border:1px solid var(--border)">&#8635; Re-run</button>
+          </form>
+        </div>
       </div>
       {% if rb_entity_resolution %}
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px">
@@ -1586,7 +1629,7 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
       {% if rb_affected %}
       <div style="overflow-x:auto">
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>SSN</th><th>DOB</th><th>MRN</th><th>Source</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>SSN</th><th>DOB</th><th>MRN</th><th>Source</th><th></th></tr></thead>
         <tbody>
         {% for p in rb_affected %}
         <tr>
@@ -1596,6 +1639,7 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
           <td style="text-align:center">{{ "&#10003;" if p.dob else "—" }}</td>
           <td style="text-align:center">{{ "&#10003;" if p.mrn else "—" }}</td>
           <td style="font-size:11px;color:var(--muted)">{{ p.source or "—" }}</td>
+          <td>{% if p.record_id %}<a href="/engagements/{{ engagement_id }}/discovery/{{ p.record_id | urlencode }}" target="_blank" style="font-size:12px;white-space:nowrap">&#128269; Source</a>{% endif %}</td>
         </tr>
         {% endfor %}
         </tbody>
@@ -1610,7 +1654,12 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <div class="card-title">&#128200; Stage 5 — Impact Assessment</div>
-        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="badge badge-blue">Complete</span>
+          <form method="post" action="/engagements/{{ engagement_id }}/rerun/5" style="display:inline">
+            <button class="btn" style="font-size:11px;padding:4px 12px;border:1px solid var(--border)">&#8635; Re-run</button>
+          </form>
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px">
         <div class="stat-card">
@@ -1654,11 +1703,16 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <div class="card-title">&#9878; Stage 6 — Regulatory Triggers</div>
-        {% if rb_legal.get("notification_required") %}
-        <span class="badge" style="margin-left:auto;background:var(--danger-bg);color:var(--danger);font-weight:700">&#9888; Notification Required</span>
-        {% else %}
-        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
-        {% endif %}
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          {% if rb_legal.get("notification_required") %}
+          <span class="badge" style="background:var(--danger-bg);color:var(--danger);font-weight:700">&#9888; Notification Required</span>
+          {% else %}
+          <span class="badge badge-blue">Complete</span>
+          {% endif %}
+          <form method="post" action="/engagements/{{ engagement_id }}/rerun/6" style="display:inline">
+            <button class="btn" style="font-size:11px;padding:4px 12px;border:1px solid var(--border)">&#8635; Re-run</button>
+          </form>
+        </div>
       </div>
       <table style="margin-bottom:10px">
         <thead><tr><th>Law</th><th>Triggered</th><th>Deadline</th><th>Notes</th></tr></thead>
@@ -1688,7 +1742,12 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <div class="card-title">&#128140; Stage 7 — Notification Preparation</div>
-        <span class="badge badge-blue" style="margin-left:auto">Complete</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="badge badge-blue">Complete</span>
+          <form method="post" action="/engagements/{{ engagement_id }}/rerun/7" style="display:inline">
+            <button class="btn" style="font-size:11px;padding:4px 12px;border:1px solid var(--border)">&#8635; Re-run</button>
+          </form>
+        </div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
         <div class="stat-card" style="flex:1;max-width:200px">
@@ -1712,7 +1771,12 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <div class="card-title">&#128230; Stage 8 — Review Pack Generated</div>
-        <span class="badge" style="margin-left:auto;background:var(--success-bg);color:var(--success);font-weight:700">&#10003; Ready for Review</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="badge" style="background:var(--success-bg);color:var(--success);font-weight:700">&#10003; Ready for Review</span>
+          <form method="post" action="/engagements/{{ engagement_id }}/rerun/8" style="display:inline">
+            <button class="btn" style="font-size:11px;padding:4px 12px;border:1px solid var(--border)">&#8635; Re-run</button>
+          </form>
+        </div>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
         {% if rb_review_pack_html %}
@@ -1731,7 +1795,12 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="card" style="margin-bottom:18px">
       <div class="card-header">
         <div class="card-title">&#9989; Stage 9 — Disclosure Checklist</div>
-        <span class="badge" style="margin-left:auto;background:var(--warn-bg);color:var(--warn);font-weight:700">&#128336; Awaiting Approval</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="badge" style="background:var(--warn-bg);color:var(--warn);font-weight:700">&#128336; Awaiting Approval</span>
+          <form method="post" action="/engagements/{{ engagement_id }}/rerun/9" style="display:inline">
+            <button class="btn" style="font-size:11px;padding:4px 12px;border:1px solid var(--border)">&#8635; Re-run</button>
+          </form>
+        </div>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px">All items require human confirmation before engagement closure.</div>
       <div style="display:flex;flex-direction:column;gap:8px">
@@ -1762,6 +1831,54 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
 
   </div>
 
+  <!-- TAB: DATA TABLES -->
+  <div class="tab-pane" id="tab-tables">
+    <div style="display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:flex-start">
+
+      <!-- Schema sidebar -->
+      <div class="card" style="padding:16px 18px;position:sticky;top:78px">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--navy-4);margin-bottom:14px">Schema Reference</div>
+        <div style="font-size:12px;font-family:monospace;line-height:2;color:var(--navy)">
+          <div style="color:var(--blue);font-weight:700;margin-top:6px">records</div>
+          <div style="color:var(--muted);font-size:11px;padding-left:8px">record_id, source_file, name<br>email, phone, address<br>has_ssn, has_dob, has_mrn<br>has_cc, has_account<br>sensitivity_tier, pii_hit_count</div>
+          <div style="color:var(--blue);font-weight:700;margin-top:10px">affected_people</div>
+          <div style="color:var(--muted);font-size:11px;padding-left:8px">record_id, name, email, phone<br>has_ssn, has_dob, has_mrn<br>source, confidence</div>
+          <div style="color:var(--blue);font-weight:700;margin-top:10px">pii_detections</div>
+          <div style="color:var(--muted);font-size:11px;padding-left:8px">kind, confidence<br>evidence_ref, source_file<br>record_id</div>
+          <div style="color:var(--blue);font-weight:700;margin-top:10px">regulatory_triggers</div>
+          <div style="color:var(--muted);font-size:11px;padding-left:8px">law, triggered<br>threshold, deadline<br>filing_required, notes</div>
+        </div>
+      </div>
+
+      <!-- Query panel -->
+      <div>
+        <!-- Preset chips -->
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
+          <span style="font-size:11px;font-weight:700;color:var(--muted);align-self:center;text-transform:uppercase;letter-spacing:1px">Presets:</span>
+          <button class="btn btn-secondary btn-sm" onclick="setPreset('all')">All Records</button>
+          <button class="btn btn-secondary btn-sm" onclick="setPreset('ssn')">Has SSN</button>
+          <button class="btn btn-secondary btn-sm" onclick="setPreset('health')">Health Data</button>
+          <button class="btn btn-secondary btn-sm" onclick="setPreset('financial')">Financial Data</button>
+          <button class="btn btn-secondary btn-sm" onclick="setPreset('pii_type')">PII by Type</button>
+          <button class="btn btn-secondary btn-sm" onclick="setPreset('regulatory')">Regulatory Triggers</button>
+        </div>
+
+        <!-- SQL textarea -->
+        <div class="card" style="padding:14px 16px;margin-bottom:12px">
+          <label style="margin-bottom:6px">SQL Query</label>
+          <textarea id="sql-input" rows="4" style="font-family:monospace;font-size:12px;resize:vertical">SELECT record_id, source_file, name, email, has_ssn, has_dob, has_mrn, sensitivity_tier FROM records ORDER BY source_file;</textarea>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+            <button class="btn btn-primary" onclick="runSqlQuery()">&#9654;&nbsp; Run Query</button>
+            <span id="query-status" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div id="query-result" style="overflow-x:auto"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="disclaimer">{{ disclaimer }}</div>
 </div>
 """ + _ROBOT_PANEL + """
@@ -1771,6 +1888,72 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
 function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+}
+
+// ── SQL Table Viewer ──
+const _PRESETS = {
+  all: 'SELECT record_id, source_file, name, email, has_ssn, has_dob, has_mrn, sensitivity_tier FROM records ORDER BY source_file;',
+  ssn: 'SELECT record_id, source_file, name, email, has_ssn, has_dob, sensitivity_tier FROM records WHERE has_ssn = 1;',
+  health: 'SELECT record_id, source_file, name, email, has_mrn, has_dob, diagnosis FROM records WHERE has_mrn=1 OR has_dob=1;',
+  financial: 'SELECT record_id, source_file, name, email, has_cc, has_account, has_routing FROM records WHERE has_cc=1 OR has_account=1;',
+  pii_type: 'SELECT kind, COUNT(*) as count, ROUND(AVG(confidence),2) as avg_conf FROM pii_detections GROUP BY kind ORDER BY count DESC;',
+  regulatory: 'SELECT law, triggered, deadline, filing_required, notes FROM regulatory_triggers;'
+};
+function setPreset(k) {
+  document.getElementById('sql-input').value = _PRESETS[k] || '';
+}
+function runSqlQuery() {
+  const sql = document.getElementById('sql-input').value.trim();
+  if (!sql) return;
+  const eid = document.body.dataset.incidentId;
+  const status = document.getElementById('query-status');
+  const result = document.getElementById('query-result');
+  status.textContent = 'Running\u2026';
+  result.innerHTML = '';
+  fetch('/engagements/' + eid + '/query', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: sql})
+  })
+  .then(r => r.json())
+  .then(d => {
+    status.textContent = '';
+    if (d.error) {
+      result.innerHTML = '<div style="color:var(--danger);padding:12px;background:var(--danger-bg);border-radius:8px;font-size:13px">\u26A0 ' + escHtml(d.error) + '</div>';
+      return;
+    }
+    const cols = d.columns || [];
+    const rows = d.rows || [];
+    // Detect if record_id column exists for discovery links
+    const ridIdx = cols.indexOf('record_id');
+    let html = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">' + rows.length + ' row' + (rows.length !== 1 ? 's' : '') + '</div>';
+    html += '<div class="card" style="padding:0;overflow:hidden"><table><thead><tr>';
+    cols.forEach(c => { html += '<th>' + escHtml(c) + '</th>'; });
+    if (ridIdx >= 0) html += '<th></th>';
+    html += '</tr></thead><tbody>';
+    rows.forEach(row => {
+      html += '<tr>';
+      row.forEach(cell => {
+        const display = cell === null ? '<span class="muted">NULL</span>' : escHtml(String(cell));
+        html += '<td style="font-size:12px">' + display + '</td>';
+      });
+      if (ridIdx >= 0) {
+        const rid = row[ridIdx];
+        if (rid) {
+          html += '<td><a href="/engagements/' + encodeURIComponent(eid) + '/discovery/' + encodeURIComponent(rid) + '" target="_blank" style="font-size:11px;white-space:nowrap">&#128269; Source</a></td>';
+        } else {
+          html += '<td></td>';
+        }
+      }
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    result.innerHTML = html;
+  })
+  .catch(e => {
+    status.textContent = '';
+    result.innerHTML = '<div style="color:var(--danger);padding:12px;background:var(--danger-bg);border-radius:8px;font-size:13px">Query failed: ' + escHtml(e.message) + '</div>';
+  });
 }
 
 // ── Upload ──
@@ -1955,6 +2138,129 @@ def _size_label(b: int) -> str:
     return f"{b/1_048_576:.1f} MB"
 
 
+# Keys cleared per stage re-run (each stage clears its own + all downstream)
+_RERUN_KEYS: dict[str, list[str]] = {
+    "1": ["incident", "evidence", "evidence_files", "ingest"],
+    "2": ["extracted", "pii_summary", "normalization_stats"],
+    "3": ["sensitivity_classification", "applicable_laws"],
+    "4": ["affected_people", "identity_scores", "entity_resolution"],
+    "5": ["impact_summary", "timeline", "chain_of_custody"],
+    "6": ["regulatory_triggers", "legal_determination", "notification_required"],
+    "7": ["notification_draft", "notification_queue", "notification_sent"],
+    "8": ["review_pack_path", "review_pack_html_path", "review_pack_manifest"],
+    "9": ["disclosure_checklist", "status", "final_note"],
+}
+
+
+def _sensitive_bool(v) -> int:
+    """Return 1 if value is present/non-empty, 0 otherwise. Never exposes raw value."""
+    if not v:  # handles None, 0, False, "", [], {}
+        return 0
+    if isinstance(v, str):
+        stripped = v.strip()
+        if not stripped:
+            return 0
+        return 1  # non-empty string → present (regardless of "[PRESENT]" or actual value)
+    return 1
+
+
+def _build_sqlite_db(runbook: dict):
+    """Build an in-memory SQLite DB from the runbook. Sensitive fields are boolean."""
+    conn = sqlite3.connect(":memory:")
+    c = conn.cursor()
+
+    # ── records ──────────────────────────────────────────────────────────────
+    c.execute("""CREATE TABLE records (
+        record_id TEXT, source_file TEXT, source_type TEXT, row_num TEXT,
+        name TEXT, email TEXT, phone TEXT, address TEXT, city TEXT,
+        state_col TEXT, zip TEXT, diagnosis TEXT, provider TEXT, insurance_plan TEXT,
+        has_ssn INTEGER, has_dob INTEGER, has_mrn INTEGER,
+        has_cc INTEGER, has_account INTEGER, has_routing INTEGER, has_insurance_id INTEGER,
+        sensitivity_tier TEXT, pii_hit_count INTEGER
+    )""")
+    records_src = runbook.get("extracted", runbook.get("evidence", []))
+    if isinstance(records_src, list):
+        for rec in records_src:
+            rid = rec.get("record_id", "")
+            parts = rid.split(":row:", 1)
+            src_file = parts[0] if parts else rid
+            row_num = parts[1] if len(parts) > 1 else ""
+            c.execute(
+                "INSERT INTO records VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    rid, src_file, rec.get("source_type", ""), row_num,
+                    rec.get("name", ""), rec.get("email", ""), rec.get("phone", ""),
+                    rec.get("address", ""), rec.get("city", ""),
+                    rec.get("state", ""), rec.get("zip", ""),
+                    rec.get("diagnosis", ""), rec.get("provider", ""), rec.get("insurance_plan", ""),
+                    _sensitive_bool(rec.get("ssn")),
+                    _sensitive_bool(rec.get("dob")),
+                    _sensitive_bool(rec.get("mrn")),
+                    _sensitive_bool(rec.get("cc")),
+                    _sensitive_bool(rec.get("account")),
+                    _sensitive_bool(rec.get("routing")),
+                    _sensitive_bool(rec.get("insurance_id")),
+                    rec.get("sensitivity_tier", ""),
+                    rec.get("pii_hit_count", 0),
+                ),
+            )
+
+    # ── affected_people ───────────────────────────────────────────────────────
+    c.execute("""CREATE TABLE affected_people (
+        record_id TEXT, name TEXT, email TEXT, phone TEXT,
+        has_ssn INTEGER, has_dob INTEGER, has_mrn INTEGER,
+        source TEXT, confidence TEXT
+    )""")
+    for p in runbook.get("affected_people", []):
+        c.execute(
+            "INSERT INTO affected_people VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                p.get("record_id", ""), p.get("name", ""), p.get("email", ""), p.get("phone", ""),
+                _sensitive_bool(p.get("ssn")),
+                _sensitive_bool(p.get("dob")),
+                _sensitive_bool(p.get("mrn")),
+                p.get("source", ""), str(p.get("confidence", "")),
+            ),
+        )
+
+    # ── pii_detections ────────────────────────────────────────────────────────
+    c.execute("""CREATE TABLE pii_detections (
+        kind TEXT, confidence REAL, evidence_ref TEXT, source_file TEXT, record_id TEXT
+    )""")
+    for hit in runbook.get("pii_summary", []):
+        c.execute(
+            "INSERT INTO pii_detections VALUES (?,?,?,?,?)",
+            (
+                hit.get("kind", ""),
+                float(hit.get("confidence", 0) or 0),
+                hit.get("evidence_ref", ""),
+                hit.get("source_file", ""),
+                hit.get("record_id", ""),
+            ),
+        )
+
+    # ── regulatory_triggers ───────────────────────────────────────────────────
+    c.execute("""CREATE TABLE regulatory_triggers (
+        law TEXT, triggered INTEGER, threshold TEXT, deadline TEXT,
+        filing_required INTEGER, notes TEXT
+    )""")
+    for t in runbook.get("regulatory_triggers", []):
+        c.execute(
+            "INSERT INTO regulatory_triggers VALUES (?,?,?,?,?,?)",
+            (
+                t.get("law", ""),
+                1 if t.get("triggered") else 0,
+                str(t.get("threshold", "")),
+                t.get("deadline", ""),
+                1 if t.get("filing_required") else 0,
+                t.get("notes", ""),
+            ),
+        )
+
+    conn.commit()
+    return conn
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # FLASK APP
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1962,6 +2268,7 @@ def _size_label(b: int) -> str:
 def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
     app = Flask(__name__)
     app.jinja_env.filters["format_number"] = _format_number
+    app.jinja_env.filters["urlencode"] = lambda v: _url_quote(str(v), safe="")
     storage = Storage(Path(workdir))
     dd = Path(data_dir) if data_dir else Path(__file__).resolve().parent / "data"
 
@@ -2342,6 +2649,213 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         iid = s.get("runbook", {}).get("incident", {}).get("incident_id", engagement_id)
         return send_file(str(p.resolve()), mimetype="application/json", as_attachment=True,
                          download_name=f"review-pack-{iid}.json")
+
+    # ── STAGE RE-RUN ──────────────────────────────────────────────────────────
+    @app.post("/engagements/<engagement_id>/rerun/<stage>")
+    def engagement_rerun(engagement_id: str, stage: str):
+        s = storage.load_state_obj(engagement_id)
+        if not s:
+            return redirect(url_for("home"))
+        stage_order = get_stage_order(workdir)
+        if stage not in stage_order:
+            return redirect(url_for("engagement_detail", engagement_id=engagement_id))
+        stage_idx = stage_order.index(stage)
+        # Stages to clear: from stage_idx onwards
+        stages_to_clear = stage_order[stage_idx:]
+        # Build set of runbook keys to remove
+        keys_to_clear: set[str] = set()
+        for sid in stages_to_clear:
+            keys_to_clear.update(_RERUN_KEYS.get(sid, []))
+        # Remove stages from completed_layers
+        completed = s.get("completed_layers", [])
+        s["completed_layers"] = [c for c in completed if c not in stages_to_clear]
+        # Reset current layer to the requested stage
+        s["current_layer"] = stage
+        # Clear downstream runbook keys
+        rb = s.get("runbook", {})
+        for k in keys_to_clear:
+            rb.pop(k, None)
+        s["runbook"] = rb
+        storage.save_state_obj(engagement_id, s)
+        storage.audit(engagement_id, "stage_rerun", {"stage": stage, "cleared_keys": sorted(keys_to_clear)})
+        return redirect(url_for("engagement_detail", engagement_id=engagement_id))
+
+    # ── SQL QUERY ─────────────────────────────────────────────────────────────
+    @app.post("/engagements/<engagement_id>/query")
+    def engagement_query(engagement_id: str):
+        s = storage.load_state_obj(engagement_id)
+        if not s:
+            return app.response_class(
+                response=json.dumps({"columns": [], "rows": [], "error": "Engagement not found"}),
+                mimetype="application/json", status=404,
+            )
+        body = request.get_json(force=True, silent=True) or {}
+        sql = (body.get("sql") or "").strip()
+        if not sql:
+            return app.response_class(
+                response=json.dumps({"columns": [], "rows": [], "error": "No SQL provided"}),
+                mimetype="application/json", status=400,
+            )
+        rb = s.get("runbook", {})
+        try:
+            conn = _build_sqlite_db(rb)
+            cur = conn.execute(sql)
+            columns = [d[0] for d in (cur.description or [])]
+            rows = [list(r) for r in cur.fetchall()]
+            conn.close()
+            return app.response_class(
+                response=json.dumps({"columns": columns, "rows": rows, "error": None}),
+                mimetype="application/json",
+            )
+        except Exception as exc:
+            return app.response_class(
+                response=json.dumps({"columns": [], "rows": [], "error": str(exc)}),
+                mimetype="application/json",
+            )
+
+    # ── DISCOVERY / PROVENANCE ────────────────────────────────────────────────
+    @app.get("/engagements/<engagement_id>/discovery/<path:record_id_enc>")
+    def engagement_discovery(engagement_id: str, record_id_enc: str):
+        record_id = _url_unquote(record_id_enc)
+        s = storage.load_state_obj(engagement_id)
+        if not s:
+            return "Engagement not found.", 404
+
+        # Parse record_id → (filename, index_type, index)
+        if ":row:" in record_id:
+            fname, _, idx_str = record_id.partition(":row:")
+            index_type = "row"
+        elif ":chunk:" in record_id:
+            fname, _, idx_str = record_id.partition(":chunk:")
+            index_type = "chunk"
+        else:
+            fname = record_id
+            index_type = "raw"
+            idx_str = "0"
+
+        try:
+            idx = int(idx_str)
+        except ValueError:
+            idx = 0
+
+        # Find the vault file
+        vault_records = _load_upload_index(workdir, engagement_id)
+        vault_meta = next((f for f in vault_records if f.get("original_name") == fname or f.get("filename") == fname), None)
+
+        # Load extracted text from vault
+        vault_dir = _upload_dir(workdir, engagement_id)
+        text_content = ""
+        if vault_meta:
+            txt_path = vault_dir / (vault_meta["filename"] + ".txt")
+            if txt_path.exists():
+                text_content = txt_path.read_text(encoding="utf-8", errors="replace")
+        else:
+            # Try to find any .txt file matching the base name
+            for txt_path in vault_dir.glob("*.txt"):
+                if fname in txt_path.name:
+                    text_content = txt_path.read_text(encoding="utf-8", errors="replace")
+                    break
+
+        # Build excerpt with highlighted row/chunk
+        excerpt_lines: list[tuple[int, str, bool]] = []  # (line_num, text, is_highlight)
+        if index_type == "row":
+            all_lines = text_content.splitlines()
+            header = all_lines[0] if all_lines else ""
+            lo = max(0, idx - 3)
+            hi = min(len(all_lines), idx + 4)
+            for i in range(lo, hi):
+                line = all_lines[i] if i < len(all_lines) else ""
+                excerpt_lines.append((i, line, i == idx))
+            # Always include header if not already in range
+            if lo > 1 and header:
+                excerpt_lines.insert(0, (0, header, False))
+        elif index_type == "chunk":
+            paragraphs = text_content.split("\n\n")
+            lo = max(0, idx - 1)
+            hi = min(len(paragraphs), idx + 2)
+            for i in range(lo, hi):
+                para = paragraphs[i] if i < len(paragraphs) else ""
+                excerpt_lines.append((i, para, i == idx))
+        else:
+            excerpt_lines.append((0, text_content[:2000], True))
+
+        # PII hits matching this record_id
+        rb = s.get("runbook", {})
+        pii_hits = [h for h in rb.get("pii_summary", []) if h.get("record_id") == record_id]
+
+        # Render standalone HTML
+        def esc(v: str) -> str:
+            return str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+        sha256 = vault_meta.get("sha256", "—") if vault_meta else "—"
+        file_type = vault_meta.get("type_label", "—") if vault_meta else "—"
+
+        rows_html = ""
+        for line_num, text, highlight in excerpt_lines:
+            bg = "background:#FFF9C4;border-left:3px solid #F59E0B;" if highlight else ""
+            rows_html += (
+                f'<tr style="{bg}">'
+                f'<td style="padding:3px 10px;color:#888;font-size:11px;user-select:none;min-width:46px;text-align:right">{line_num}</td>'
+                f'<td style="padding:3px 10px 3px 14px;white-space:pre-wrap">{esc(text)}</td>'
+                f'</tr>'
+            )
+
+        pii_rows_html = ""
+        for hit in pii_hits:
+            pii_rows_html += (
+                f'<tr>'
+                f'<td>{esc(hit.get("kind",""))}</td>'
+                f'<td>{esc(hit.get("evidence_ref",""))}</td>'
+                f'<td>{esc(str(hit.get("confidence",""))[:6])}</td>'
+                f'</tr>'
+            )
+
+        html = f"""<!doctype html><html><head><meta charset="utf-8"/>
+<title>Discovery: {esc(record_id)}</title>
+<style>
+body{{font-family:'Segoe UI',system-ui,sans-serif;background:#07111D;color:#C8D8E8;font-size:13px;margin:0;padding:0;}}
+.wrap{{max-width:960px;margin:0 auto;padding:28px 24px 60px;}}
+h1{{font-size:18px;font-weight:800;color:#fff;margin-bottom:4px;}}
+.meta{{font-size:12px;color:#7A8FA8;margin-bottom:22px;}}
+.card{{background:#0D1E32;border:1px solid #172E4A;border-radius:10px;padding:18px 22px;margin-bottom:20px;}}
+.card-title{{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:#7A8FA8;margin-bottom:14px;}}
+table{{border-collapse:collapse;width:100%;}}
+.code-table td{{font-family:monospace;font-size:12px;line-height:1.7;border-bottom:1px solid #172E4A;vertical-align:top;color:#A8C8E8;}}
+.code-table tr:last-child td{{border-bottom:none;}}
+thead th{{background:#172E4A;color:#7A8FA8;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 12px;text-align:left;}}
+tbody td{{padding:9px 12px;border-bottom:1px solid #172E4A;color:#A8C8E8;}}
+.back{{color:#3B82F6;text-decoration:none;font-size:13px;font-weight:600;}}
+.back:hover{{text-decoration:underline;}}
+.badge{{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:#1F3D62;color:#7A8FA8;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="margin-bottom:18px"><a href="/engagements/{esc(engagement_id)}" class="back">&larr; Back to Engagement</a></div>
+  <h1>&#128269; Source Discovery</h1>
+  <div class="meta">Record ID: <code style="color:#A8C8E8">{esc(record_id)}</code></div>
+
+  <div class="card">
+    <div class="card-title">File Information</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;font-size:13px">
+      <div><div style="color:#7A8FA8;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">Filename</div><div style="color:#fff;font-weight:600">{esc(fname)}</div></div>
+      <div><div style="color:#7A8FA8;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">Type</div><div>{esc(file_type)}</div></div>
+      <div><div style="color:#7A8FA8;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">SHA-256</div><div style="font-family:monospace;font-size:11px;color:#7A8FA8">{esc(sha256[:24])}...</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Source Excerpt &mdash; {esc(index_type.title())} {idx} <span class="badge" style="margin-left:8px;vertical-align:middle">highlighted</span></div>
+    <div style="overflow-x:auto;border-radius:7px;border:1px solid #172E4A;background:#07111D">
+      <table class="code-table"><tbody>{rows_html}</tbody></table>
+    </div>
+    {'<div style="margin-top:10px;font-size:11px;color:#7A8FA8">&#9888; Yellow row is the matched record. ±3 rows of context shown.</div>' if index_type == 'row' else ''}
+  </div>
+
+  {'<div class="card"><div class="card-title">PII Detections for this Record</div><div style="overflow-x:auto"><table><thead><tr><th>Kind</th><th>Position (evidence_ref)</th><th>Confidence</th></tr></thead><tbody>' + pii_rows_html + '</tbody></table></div></div>' if pii_hits else '<div class="card"><div class="card-title">PII Detections</div><div style="color:#7A8FA8;font-size:13px">No PII hits recorded for this record ID.</div></div>'}
+</div>
+</body></html>"""
+        return html
 
     return app
 
