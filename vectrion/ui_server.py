@@ -57,7 +57,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);colo
 .topbar{
   display:flex;align-items:center;background:var(--navy);
   border-bottom:2px solid var(--navy-3);height:58px;padding:0 28px;
-  position:sticky;top:0;z-index:200;box-shadow:0 2px 20px rgba(0,0,0,0.45);
+  position:sticky;top:0;z-index:200;box-shadow:0 2px 24px rgba(0,0,0,0.5),0 1px 0 rgba(59,130,246,0.25);
 }
 .topbar-brand{display:flex;align-items:center;gap:12px;text-decoration:none;}
 .tb-icon{
@@ -76,7 +76,7 @@ nav a{
   transition:all 0.15s;border:1px solid transparent;
 }
 nav a:hover{background:rgba(255,255,255,0.07);color:#fff;border-color:var(--navy-3);}
-nav a.active{background:var(--navy-3);color:#fff;border-color:var(--blue);}
+nav a.active{background:rgba(59,130,246,0.14);color:var(--blue-light);border-color:rgba(59,130,246,0.28);}
 
 /* ── LAYOUT ── */
 .split-wrap{display:flex;min-height:calc(100vh - 58px);}
@@ -94,7 +94,9 @@ nav a.active{background:var(--navy-3);color:#fff;border-color:var(--blue);}
   background:var(--white);border:1px solid var(--border);border-radius:12px;
   padding:18px 20px;box-shadow:0 2px 8px rgba(10,22,40,0.06);
   display:flex;flex-direction:column;gap:4px;
+  transition:box-shadow 0.18s,transform 0.18s;
 }
+.stat-card:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(7,17,29,0.12);}
 .stat-num{font-size:28px;font-weight:800;color:var(--navy);line-height:1;}
 .stat-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);}
 .stat-icon{font-size:22px;margin-bottom:4px;}
@@ -102,8 +104,11 @@ nav a.active{background:var(--navy-3);color:#fff;border-color:var(--blue);}
 /* ── CARDS ── */
 .card{
   background:var(--white);border:1px solid var(--border);border-radius:12px;
-  padding:24px 28px;margin-bottom:22px;box-shadow:0 2px 10px rgba(10,22,40,0.07);
+  padding:24px 28px;margin-bottom:22px;
+  box-shadow:0 1px 4px rgba(0,0,0,0.08),0 4px 20px rgba(7,17,29,0.08);
+  transition:box-shadow 0.2s,transform 0.2s;
 }
+.card:hover{box-shadow:0 2px 8px rgba(0,0,0,0.10),0 8px 28px rgba(7,17,29,0.12);}
 .card-header{
   display:flex;align-items:center;gap:10px;
   padding-bottom:16px;margin-bottom:20px;border-bottom:1px solid var(--silver-pale);
@@ -119,10 +124,10 @@ nav a.active{background:var(--navy-3);color:#fff;border-color:var(--blue);}
 .btn{
   display:inline-flex;align-items:center;gap:6px;padding:9px 20px;
   font-size:13px;font-weight:600;border-radius:7px;border:none;cursor:pointer;
-  text-decoration:none;transition:all 0.15s;letter-spacing:0.3px;
+  text-decoration:none;transition:all 0.12s;letter-spacing:0.3px;
 }
 .btn-primary{background:var(--blue);color:#fff;box-shadow:0 2px 10px rgba(29,78,216,0.3);}
-.btn-primary:hover{background:#1a44c4;box-shadow:0 4px 16px rgba(29,78,216,0.45);transform:translateY(-1px);}
+.btn-primary:hover{background:#1a44c4;box-shadow:0 4px 20px rgba(29,78,216,0.55);transform:translateY(-1px);}
 .btn-secondary{background:var(--white);color:var(--text);border:1px solid var(--border);}
 .btn-secondary:hover{background:var(--bg);border-color:var(--silver);}
 .btn-danger{background:var(--danger);color:#fff;}
@@ -185,7 +190,7 @@ thead th:first-child{border-radius:8px 0 0 0;}
 thead th:last-child{border-radius:0 8px 0 0;}
 tbody td{padding:13px 16px;border-bottom:1px solid var(--silver-pale);vertical-align:middle;}
 tbody tr:last-child td{border-bottom:none;}
-tbody tr:hover td{background:#F0F6FF;}
+tbody tr:hover td{background:#EBF4FF;transition:background 0.1s;}
 
 /* ── BADGES ── */
 .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:0.4px;white-space:nowrap;}
@@ -204,7 +209,7 @@ tbody tr:hover td{background:#F0F6FF;}
 
 /* ── PROGRESS BAR ── */
 .progress-track{height:6px;background:var(--silver-pale);border-radius:999px;overflow:hidden;min-width:100px;}
-.progress-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--blue-light));border-radius:999px;transition:width 0.3s;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--blue-light));border-radius:999px;transition:width 0.3s;box-shadow:0 0 8px rgba(59,130,246,0.35);}
 
 /* ── PRE ── */
 pre{
@@ -362,7 +367,7 @@ pre{
   margin-bottom:-2px;transition:all 0.15s;letter-spacing:0.3px;
 }
 .tab-btn:hover{color:var(--navy);}
-.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:700;}
+.tab-btn.active{color:var(--blue-light);border-bottom-color:var(--blue-light);font-weight:700;}
 .tab-pane{display:none;}
 .tab-pane.active{display:block;}
 
@@ -392,6 +397,65 @@ pre{
 .proc-ok  {color:var(--success);font-weight:600;font-size:12px;}
 .proc-err {color:var(--danger);font-weight:600;font-size:12px;}
 .proc-pend{color:var(--warn);font-weight:600;font-size:12px;}
+
+/* ── CUSTOM SCROLLBARS ── */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--silver-3);border-radius:6px;}
+::-webkit-scrollbar-thumb:hover{background:var(--silver);}
+
+/* ── FLOATING CHAT FAB ── */
+#vect-fab{
+  position:fixed;bottom:28px;right:28px;z-index:999;
+  width:56px;height:56px;border-radius:50%;
+  background:linear-gradient(135deg,var(--blue-light),var(--blue));
+  box-shadow:0 4px 20px rgba(29,78,216,0.45),0 0 0 1px rgba(59,130,246,0.2);
+  border:none;cursor:pointer;color:#fff;font-size:22px;
+  display:flex;align-items:center;justify-content:center;transition:all 0.2s;
+}
+#vect-fab:hover{transform:scale(1.08);box-shadow:0 6px 28px rgba(29,78,216,0.65),0 0 0 2px rgba(59,130,246,0.3);}
+#vect-fab.chat-open{background:var(--navy-3);box-shadow:0 2px 8px rgba(0,0,0,0.4);}
+#vect-chat{
+  position:fixed;bottom:96px;right:28px;z-index:998;width:360px;max-height:520px;
+  background:var(--navy);border:1px solid var(--navy-3);border-radius:16px;
+  overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:0 16px 60px rgba(0,0,0,0.55),0 0 0 1px rgba(59,130,246,0.06);
+  transition:opacity 0.2s,transform 0.22s;
+  opacity:0;pointer-events:none;transform:translateY(14px) scale(0.97);
+}
+#vect-chat.open{opacity:1;pointer-events:all;transform:translateY(0) scale(1);}
+.vc-header{
+  display:flex;align-items:center;gap:12px;padding:14px 16px;
+  background:var(--navy-2);border-bottom:1px solid var(--navy-3);flex-shrink:0;
+}
+.vc-avatar{
+  width:32px;height:32px;border-radius:8px;
+  background:linear-gradient(135deg,var(--blue-light),var(--blue));
+  display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;flex-shrink:0;
+}
+.vc-name{font-size:12px;font-weight:800;letter-spacing:2px;color:#fff;text-transform:uppercase;}
+.vc-status{display:flex;align-items:center;gap:5px;font-size:10px;color:#22C55E;letter-spacing:0.5px;margin-top:2px;}
+.vc-dot{width:6px;height:6px;border-radius:50%;background:#22C55E;box-shadow:0 0 6px #22C55E;animation:sPulse 2s infinite;}
+.vc-close{margin-left:auto;background:transparent;border:none;color:var(--silver);cursor:pointer;font-size:16px;padding:4px 6px;border-radius:4px;line-height:1;}
+.vc-close:hover{color:#fff;background:rgba(255,255,255,0.08);}
+.vc-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:9px;scroll-behavior:smooth;}
+.vc-msgs::-webkit-scrollbar{width:4px;}
+.vc-msgs::-webkit-scrollbar-thumb{background:var(--navy-3);border-radius:4px;}
+.vc-bub{
+  max-width:88%;padding:9px 13px;border-radius:10px;font-size:12px;line-height:1.6;word-break:break-word;
+}
+.vc-bub.bot{background:rgba(255,255,255,0.06);color:var(--silver-2);border:1px solid rgba(255,255,255,0.08);border-top-left-radius:3px;align-self:flex-start;}
+.vc-bub.user{background:var(--blue);color:#fff;border-top-right-radius:3px;align-self:flex-end;}
+.vc-typing{display:flex;gap:4px;padding:9px 13px;align-self:flex-start;}
+.vc-typing span{width:6px;height:6px;border-radius:50%;background:var(--silver);animation:tDot 1.2s infinite;}
+.vc-typing span:nth-child(2){animation-delay:0.2s;}
+.vc-typing span:nth-child(3){animation-delay:0.4s;}
+.vc-input-row{border-top:1px solid var(--navy-3);padding:10px 12px;display:flex;gap:8px;background:var(--navy-2);flex-shrink:0;}
+.vc-input{flex:1;background:rgba(255,255,255,0.07)!important;border:1px solid rgba(255,255,255,0.12)!important;color:#fff!important;padding:7px 11px!important;border-radius:7px!important;font-size:12px!important;}
+.vc-input::placeholder{color:var(--silver)!important;}
+.vc-input:focus{border-color:var(--blue-light)!important;box-shadow:0 0 0 2px rgba(59,130,246,0.2)!important;}
+.vc-send{background:var(--blue);color:#fff;border:none;border-radius:7px;padding:7px 13px;font-size:13px;cursor:pointer;flex-shrink:0;}
+.vc-send:hover{background:#1a44c4;}
 </style>"""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -408,7 +472,76 @@ _TOPBAR = """<div class="topbar">
     <a href="/plugins" class="{{ 'active' if active_nav=='plugins' else '' }}">Plugins</a>
     <a href="/config" class="{{ 'active' if active_nav=='config' else '' }}">Configuration</a>
   </nav>
-</div>"""
+</div>
+<!-- Vectorian Chat FAB -->
+<button id="vect-fab" onclick="toggleVectChat()" title="Ask Vectorian">&#9670;</button>
+<div id="vect-chat">
+  <div class="vc-header">
+    <div class="vc-avatar">&#9670;</div>
+    <div>
+      <div class="vc-name">VECTORIAN</div>
+      <div class="vc-status"><div class="vc-dot"></div>AI Agent Online</div>
+    </div>
+    <button class="vc-close" onclick="toggleVectChat()">&#x2715;</button>
+  </div>
+  <div class="vc-msgs" id="vc-msgs-box"></div>
+  <div class="vc-input-row">
+    <input class="vc-input" id="vc-input" type="text" placeholder="Ask Vectorian anything..."/>
+    <button class="vc-send" onclick="vcSend()">&#9658;</button>
+  </div>
+</div>
+<script>
+(function(){
+  const PK='vect_fab_'+(document.body.dataset.page||'x');
+  function gH(){try{return JSON.parse(sessionStorage.getItem(PK)||'[]');}catch{return[];}}
+  function sH(h){sessionStorage.setItem(PK,JSON.stringify(h));}
+  function render(){
+    const box=document.getElementById('vc-msgs-box');
+    if(!box)return;
+    box.innerHTML='';
+    gH().forEach(function(m){
+      const bub=document.createElement('div');
+      bub.className='vc-bub '+(m.role==='user'?'user':'bot');
+      bub.textContent=m.text;
+      box.appendChild(bub);
+    });
+    box.scrollTop=box.scrollHeight;
+  }
+  function addMsg(role,text){const h=gH();h.push({role:role,text:text});sH(h);render();}
+  function showTyping(){
+    const box=document.getElementById('vc-msgs-box');if(!box)return;
+    const t=document.createElement('div');t.id='vc-typing';t.className='vc-typing';
+    t.innerHTML='<span></span><span></span><span></span>';
+    box.appendChild(t);box.scrollTop=box.scrollHeight;
+  }
+  function hideTyping(){const t=document.getElementById('vc-typing');if(t)t.remove();}
+  window.toggleVectChat=function(){
+    const chat=document.getElementById('vect-chat');
+    const fab=document.getElementById('vect-fab');
+    const isOpen=chat.classList.toggle('open');
+    fab.classList.toggle('chat-open',isOpen);
+    if(isOpen){
+      if(!gH().length)addMsg('bot',"Hello, Operator. I'm Vectorian. Ask me about breach response stages, regulatory compliance, or platform configuration.");
+      else render();
+      setTimeout(function(){const inp=document.getElementById('vc-input');if(inp)inp.focus();},200);
+    }
+  };
+  window.vcSend=function(){
+    const inp=document.getElementById('vc-input');
+    const msg=inp.value.trim();if(!msg)return;inp.value='';
+    addMsg('user',msg);showTyping();
+    const iid=document.body.dataset.incidentId||'';
+    const payload={message:msg};if(iid)payload.incident_id=iid;
+    fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .then(function(r){return r.json();})
+      .then(function(d){hideTyping();addMsg('bot',d.reply||'No response.');})
+      .catch(function(){hideTyping();addMsg('bot','Unable to reach Vectorian AI.');});
+  };
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Enter'&&document.activeElement===document.getElementById('vc-input'))vcSend();
+  });
+})();
+</script>"""
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ROBOT PANEL
@@ -657,7 +790,6 @@ INDEX_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
   <div class="disclaimer">{{ disclaimer }}</div>
 </div>
 </div>
-""" + _ROBOT_PANEL + """
 </div>
 </body></html>"""
 
@@ -913,7 +1045,6 @@ NEW_ENG_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
 
   </form>
 </div>
-""" + _ROBOT_PANEL + """
 </div>
 <script>
 let currentStep=1;
@@ -1051,7 +1182,6 @@ CONFIG_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     </div>
   </form>
 </div>
-""" + _ROBOT_PANEL + """
 </div>
 <script>
 var cc={{ custom_count }};
@@ -1282,6 +1412,69 @@ details.api-details .api-body{padding:10px 0 4px;}
     </div>
   </div>
 
+  {# ── CUSTOM PLUGINS ── #}
+  <div class="plugin-section-hdr">Custom Plugins</div>
+
+  {# Upload card #}
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <div class="card-title">&#128196; Upload Custom Scanner</div>
+    </div>
+    <form method="post" action="/plugins/upload" enctype="multipart/form-data"
+          style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <label class="btn btn-secondary" style="cursor:pointer;margin:0">
+        &#128193;&nbsp; Choose .py File
+        <input type="file" name="file" accept=".py" style="display:none" onchange="this.form.submit()"/>
+      </label>
+      <a href="/plugins/sdk-template" class="plain" style="font-size:13px">&#11015; Download SDK template &rarr;</a>
+    </form>
+    <div class="input-hint" style="margin-top:10px">
+      Your class must implement
+      <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">scan_file()</code>
+      and
+      <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">scan_vault()</code>.
+      Set a <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">display_name</code> class attribute.
+    </div>
+  </div>
+
+  {# Installed custom plugins #}
+  {% if custom_plugins %}
+  <div class="plugin-grid">
+  {% for cp in custom_plugins %}
+  <div class="plugin-card{% if cp.error %} disabled-card{% endif %}">
+    <div class="plugin-top">
+      <div style="display:flex;gap:12px;align-items:flex-start;min-width:0">
+        <div class="plugin-icon">&#9881;</div>
+        <div>
+          <div class="plugin-name">{{ cp.name }}</div>
+          <div class="plugin-cat">Custom Plugin &mdash; {{ cp.filename }}</div>
+        </div>
+      </div>
+      {% if cp.error %}
+      <span class="badge" style="background:var(--danger-bg);color:var(--danger);flex-shrink:0">Error</span>
+      {% else %}
+      <span class="badge badge-green" style="flex-shrink:0">&#10003; Loaded</span>
+      {% endif %}
+    </div>
+    {% if cp.error %}
+    <div style="font-size:12px;color:var(--danger);background:var(--danger-bg);padding:8px 12px;border-radius:6px;font-family:monospace;word-break:break-all">
+      {{ cp.error }}
+    </div>
+    {% endif %}
+    <form method="post" action="/plugins/custom/{{ cp.filename | urlencode }}/remove"
+          style="display:flex;justify-content:flex-end;margin-top:4px">
+      <button type="submit" class="btn btn-danger btn-sm"
+              onclick="return confirm('Remove {{ cp.filename }}?')">&#x2715;&nbsp; Remove</button>
+    </form>
+  </div>
+  {% endfor %}
+  </div>
+  {% else %}
+  <div style="color:var(--muted);font-size:13px;padding:10px 0 20px">
+    No custom plugins installed. Upload a <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">.py</code> file above to get started.
+  </div>
+  {% endif %}
+
 </div>
 </body></html>"""
 
@@ -1395,7 +1588,6 @@ SETUP_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
   </script>
   {% endif %}
 </div>
-""" + _ROBOT_PANEL + """
 </div></body></html>"""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2318,7 +2510,6 @@ ORDER BY source_file;</textarea>
 
   <div class="disclaimer">{{ disclaimer }}</div>
 </div>
-""" + _ROBOT_PANEL + """
 </div>
 <script>
 // ── Tabs ──
@@ -2943,14 +3134,16 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
 
     @app.get("/plugins")
     def plugins_page():
-        from vectrion.plugins.registry import load_plugin_config, _PLUGIN_META
+        from vectrion.plugins.registry import load_plugin_config, _PLUGIN_META, load_custom_plugins
         cfg = load_plugin_config(workdir)
+        custom_plugins = load_custom_plugins(workdir)
         return render_template_string(
             PLUGINS_TMPL,
             active_nav="plugins",
             page_title="Plugins",
             plugin_meta=_PLUGIN_META,
             plugin_cfg=cfg,
+            custom_plugins=custom_plugins,
         )
 
     @app.post("/plugins/save")
@@ -2964,6 +3157,42 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
                 cfg[plugin_id]["api_key"] = request.form.get("api_key", "").strip()
             save_plugin_config(workdir, cfg)
         return redirect(url_for("plugins_page"))
+
+    @app.post("/plugins/upload")
+    def plugins_upload():
+        from werkzeug.utils import secure_filename
+        uploaded = request.files.get("file")
+        if not uploaded or not uploaded.filename:
+            return redirect(url_for("plugins_page"))
+        filename = secure_filename(uploaded.filename)
+        if not filename.endswith(".py"):
+            return redirect(url_for("plugins_page"))
+        dest_dir = Path(workdir) / "custom_plugins"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        uploaded.save(str(dest_dir / filename))
+        return redirect(url_for("plugins_page"))
+
+    @app.post("/plugins/custom/<filename>/remove")
+    def plugins_custom_remove(filename: str):
+        from werkzeug.utils import secure_filename
+        safe = secure_filename(filename)
+        if not safe.endswith(".py"):
+            return redirect(url_for("plugins_page"))
+        target = Path(workdir) / "custom_plugins" / safe
+        if target.exists():
+            target.unlink()
+        return redirect(url_for("plugins_page"))
+
+    @app.get("/plugins/sdk-template")
+    def plugins_sdk_template():
+        from flask import send_file
+        template_path = Path(__file__).resolve().parent / "plugins" / "sdk_template.py"
+        if not template_path.exists():
+            return "SDK template not found.", 404
+        return send_file(
+            str(template_path), mimetype="text/x-python",
+            as_attachment=True, download_name="custom_scanner_template.py",
+        )
 
     @app.get("/engagements/new")
     def new_engagement():

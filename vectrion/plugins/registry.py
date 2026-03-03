@@ -5,6 +5,7 @@ Config is persisted to <workdir>/plugins.json.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -91,7 +92,63 @@ _PLUGIN_META: list[dict] = [
 _SCANNER_MAP: dict[str, type] | None = None
 
 
-def _get_scanner_map() -> dict[str, type]:
+def load_custom_plugins(workdir) -> list[dict]:
+    """Discover and load custom scanner plugins from <workdir>/custom_plugins/*.py.
+
+    Each file is imported; the first class that implements both ``scan_vault``
+    and ``scan_file`` is used as the scanner class.
+
+    Returns a list of dicts with keys:
+        id        — str  — e.g. "custom-my_scanner"
+        name      — str  — display_name class attr, or filename stem
+        filename  — str  — e.g. "my_scanner.py"
+        cls       — type | None  — the scanner class (None on load error)
+        error     — str | None  — error message if loading failed
+    """
+    results: list[dict] = []
+    plugin_dir = Path(workdir) / "custom_plugins"
+    if not plugin_dir.exists():
+        return results
+
+    for py_file in sorted(plugin_dir.glob("*.py")):
+        entry: dict = {
+            "id":       f"custom-{py_file.stem}",
+            "name":     py_file.stem,
+            "filename": py_file.name,
+            "cls":      None,
+            "error":    None,
+        }
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"_vect_custom_{py_file.stem}", py_file
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            cls = None
+            for attr_name in dir(module):
+                obj = getattr(module, attr_name)
+                if (
+                    isinstance(obj, type)
+                    and hasattr(obj, "scan_vault")
+                    and hasattr(obj, "scan_file")
+                ):
+                    cls = obj
+                    break
+
+            if cls is None:
+                entry["error"] = "No class with scan_file() and scan_vault() found"
+            else:
+                entry["cls"] = cls
+                entry["name"] = getattr(cls, "display_name", py_file.stem)
+        except Exception as exc:
+            entry["error"] = str(exc)
+
+        results.append(entry)
+    return results
+
+
+def _get_scanner_map(workdir=None) -> dict[str, type]:
     global _SCANNER_MAP
     if _SCANNER_MAP is None:
         from vectrion.plugins.phi_enhanced import PHIEnhancedScanner
@@ -102,7 +159,12 @@ def _get_scanner_map() -> dict[str, type]:
             "network-ioc": NetworkIOCScanner,
             "encoded-payload": EncodedPayloadScanner,
         }
-    return _SCANNER_MAP
+    result = dict(_SCANNER_MAP)
+    if workdir:
+        for entry in load_custom_plugins(workdir):
+            if entry.get("cls"):
+                result[entry["id"]] = entry["cls"]
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────

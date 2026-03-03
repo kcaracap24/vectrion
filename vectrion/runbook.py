@@ -274,7 +274,7 @@ def run_layer(
         _run_workdir = (context or {}).get("workdir", ".vectrion")
         plugin_results = {}
         if vault_dir and vault_dir.exists() and vault_index:
-            for pid, cls in _get_scanner_map().items():
+            for pid, cls in _get_scanner_map(_run_workdir).items():
                 if is_plugin_enabled(pid, _run_workdir):
                     plugin_results[pid] = cls().scan_vault(vault_dir, vault_index)
         state["plugin_results"] = plugin_results
