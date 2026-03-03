@@ -16,6 +16,7 @@ from vectrion.custody import file_sha256
 from vectrion.detectors import classify_hits, detect_pii
 from vectrion.identity import explain_identity_match, score_identity_match
 from vectrion.plugins.defaults import DeterministicExtractor, DraftOnlyNotifier
+from vectrion.plugins.secrets import SecretsScanner
 from vectrion.redaction import redact_text
 
 
@@ -256,6 +257,17 @@ def run_layer(
             "total_pii_hits":    len(pii_summary),
             "pii_kinds":         list({h["kind"] for h in pii_summary}),
         }
+
+        # Secrets scan — runs on vault files when available, no-op on demo data
+        if vault_dir and vault_dir.exists() and vault_index:
+            scanner = SecretsScanner()
+            state["secrets_scan"] = scanner.scan_vault(vault_dir, vault_index)
+        else:
+            state.setdefault("secrets_scan", {
+                "findings": [], "files_scanned": [], "total_findings": 0,
+                "severity_counts": {}, "critical_count": 0, "high_count": 0,
+                "medium_count": 0, "method": "regex",
+            })
 
     # ── Stage C — Sensitive Information Classification ───────────────────────
     elif letter == "C":

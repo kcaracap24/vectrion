@@ -1562,6 +1562,94 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
         {% endfor %}
       </div>
       {% endif %}
+
+      {# ── Secrets Scan Results ── #}
+      {% set ss = rb_secrets_scan %}
+      {% if ss %}
+      <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <span style="font-weight:700;font-size:13px;color:var(--text)">&#128272; Secrets Scan</span>
+          {% if ss.get("method") == "trufflehog" %}
+          <span class="badge badge-blue" style="font-size:10px">TruffleHog</span>
+          {% else %}
+          <span class="badge" style="font-size:10px;background:#f5f5f5;color:#666;border:1px solid #ddd">Regex Engine</span>
+          {% endif %}
+          {% if ss.get("total_findings", 0) == 0 %}
+          <span class="badge" style="background:#d1fae5;color:#065f46;font-size:11px">&#10003; No secrets found</span>
+          {% else %}
+          <span class="badge badge-danger" style="font-size:11px">{{ ss.get("total_findings") }} finding{{ "s" if ss.get("total_findings") != 1 else "" }}</span>
+          {% endif %}
+        </div>
+
+        {% if ss.get("total_findings", 0) > 0 %}
+        {# Severity summary pills #}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          {% if ss.get("critical_count", 0) %}
+          <span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:600">
+            &#9888; {{ ss.critical_count }} Critical
+          </span>
+          {% endif %}
+          {% if ss.get("high_count", 0) %}
+          <span style="background:#fff7ed;color:#9a3412;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:600">
+            &#9650; {{ ss.high_count }} High
+          </span>
+          {% endif %}
+          {% if ss.get("medium_count", 0) %}
+          <span style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:600">
+            &#9679; {{ ss.get("medium_count", 0) }} Medium
+          </span>
+          {% endif %}
+        </div>
+
+        {# Findings table — no raw values shown, only hashes #}
+        <div style="overflow-x:auto">
+        <table style="font-size:12px;margin-bottom:0">
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Secret Type</th>
+              <th>File</th>
+              <th>Line</th>
+              <th>Hash (SHA-256 prefix)</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for f in ss.get("findings", [])[:50] %}
+          <tr>
+            <td>
+              {% if f.severity == "critical" %}
+              <span style="color:#dc2626;font-weight:700">&#9888; CRITICAL</span>
+              {% elif f.severity == "high" %}
+              <span style="color:#ea580c;font-weight:600">&#9650; HIGH</span>
+              {% elif f.severity == "medium" %}
+              <span style="color:#d97706;font-weight:600">&#9679; MEDIUM</span>
+              {% else %}
+              <span style="color:#6b7280">{{ f.severity|upper }}</span>
+              {% endif %}
+            </td>
+            <td style="font-weight:500">{{ f.detector }}</td>
+            <td style="color:var(--text-muted);font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ f.get('original_name', f.source_file) }}">{{ f.get("original_name", f.source_file) }}</td>
+            <td style="font-family:monospace;text-align:right">{{ f.line }}</td>
+            <td style="font-family:monospace;color:var(--text-muted);font-size:11px">{{ f.secret_hash }}…</td>
+          </tr>
+          {% endfor %}
+          {% if ss.get("findings", [])|length > 50 %}
+          <tr><td colspan="5" style="text-align:center;color:var(--text-muted);font-size:11px">… and {{ ss.get("findings",[])|length - 50 }} more findings</td></tr>
+          {% endif %}
+          </tbody>
+        </table>
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:8px">
+          &#128274; Raw secret values are never stored. Hashes shown for deduplication only.
+          Remediate all findings before closing this engagement.
+        </p>
+        {% else %}
+        <p style="font-size:13px;color:#065f46;margin:0">
+          &#10003; No exposed secrets detected in {{ ss.get("files_scanned", [])|length }} file{{ "s" if ss.get("files_scanned", [])|length != 1 else "" }} scanned.
+        </p>
+        {% endif %}
+      </div>
+      {% endif %}
     </div>
     {% endif %}
 
@@ -2342,7 +2430,7 @@ def _size_label(b: int) -> str:
 # Keys cleared per stage re-run (each stage clears its own + all downstream)
 _RERUN_KEYS: dict[str, list[str]] = {
     "1": ["incident", "evidence", "evidence_files", "ingest"],
-    "2": ["extracted", "pii_summary", "normalization_stats"],
+    "2": ["extracted", "pii_summary", "normalization_stats", "secrets_scan"],
     "3": ["sensitivity_classification", "applicable_laws"],
     "4": ["affected_people", "identity_scores", "entity_resolution"],
     "5": ["impact_summary", "timeline", "chain_of_custody"],
@@ -2676,6 +2764,7 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             rb_ingest=rb.get("ingest", {}),
             rb_norm_stats=rb.get("normalization_stats", {}),
             rb_pii_kinds=rb_pii_kinds,
+            rb_secrets_scan=rb.get("secrets_scan", {}),
             rb_sensitivity=rb_sensitivity,
             rb_applicable_laws=list(rb.get("applicable_laws", {}).keys()),
             rb_affected=rb.get("affected_people", []),
