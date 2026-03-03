@@ -772,7 +772,13 @@ INDEX_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
             <div class="muted" style="font-size:11px;margin-top:3px">{{ e.completed_count }}/{{ e.total_stages }} stages</div>
           </td>
           <td class="muted" style="font-size:12px">{{ e.created_at }}</td>
-          <td><a href="/engagements/{{ e.id }}" class="btn btn-secondary btn-sm">Open &rarr;</a></td>
+          <td style="display:flex;gap:6px;align-items:center">
+            <a href="/engagements/{{ e.id }}" class="btn btn-secondary btn-sm">Open &rarr;</a>
+            <form method="post" action="/engagements/{{ e.id }}/delete"
+                  onsubmit="return confirm('Delete engagement {{ e.id }}? This cannot be undone.')">
+              <button type="submit" class="btn btn-danger btn-sm">&#128465;</button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
