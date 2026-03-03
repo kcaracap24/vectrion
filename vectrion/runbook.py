@@ -269,6 +269,16 @@ def run_layer(
                 "medium_count": 0, "method": "regex",
             })
 
+        # Run additional enabled analysis plugins
+        from vectrion.plugins.registry import is_plugin_enabled, _get_scanner_map
+        _run_workdir = (context or {}).get("workdir", ".vectrion")
+        plugin_results = {}
+        if vault_dir and vault_dir.exists() and vault_index:
+            for pid, cls in _get_scanner_map().items():
+                if is_plugin_enabled(pid, _run_workdir):
+                    plugin_results[pid] = cls().scan_vault(vault_dir, vault_index)
+        state["plugin_results"] = plugin_results
+
     # ── Stage C — Sensitive Information Classification ───────────────────────
     elif letter == "C":
         from vectrion.normalizer import summarize_records

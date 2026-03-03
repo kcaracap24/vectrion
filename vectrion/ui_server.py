@@ -405,6 +405,7 @@ _TOPBAR = """<div class="topbar">
   <div class="tb-div"></div>
   <nav>
     <a href="/" class="{{ 'active' if active_nav=='dashboard' else '' }}">Dashboard</a>
+    <a href="/plugins" class="{{ 'active' if active_nav=='plugins' else '' }}">Plugins</a>
     <a href="/config" class="{{ 'active' if active_nav=='config' else '' }}">Configuration</a>
   </nav>
 </div>"""
@@ -1091,6 +1092,200 @@ function addStage(){
 </body></html>"""
 
 # ─────────────────────────────────────────────────────────────────────────────
+# PLUGINS PAGE
+# ─────────────────────────────────────────────────────────────────────────────
+PLUGINS_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Vectorian — Plugins</title>""" + _CSS + """
+<style>
+.plugin-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px;}
+@media(max-width:820px){.plugin-grid{grid-template-columns:1fr;}}
+.plugin-card{
+  background:var(--white);border:1px solid var(--border);border-radius:12px;
+  padding:18px 20px;box-shadow:0 2px 8px rgba(10,22,40,0.06);
+  display:flex;flex-direction:column;gap:10px;
+}
+.plugin-card.disabled-card{opacity:0.55;filter:grayscale(0.4);}
+.plugin-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+.plugin-icon{font-size:22px;flex-shrink:0;}
+.plugin-name{font-size:14px;font-weight:700;color:var(--navy);}
+.plugin-cat{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
+  color:var(--muted);margin-top:2px;}
+.plugin-desc{font-size:12px;color:var(--muted);line-height:1.6;}
+.plugin-tags{display:flex;flex-wrap:wrap;gap:5px;}
+.plugin-tag{padding:2px 8px;background:var(--navy);color:var(--silver-2);
+  border-radius:4px;font-family:monospace;font-size:10px;}
+.toggle-wrap{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.toggle-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;
+  letter-spacing:0.8px;white-space:nowrap;}
+/* Toggle switch */
+.tgl-sw{position:relative;display:inline-block;width:40px;height:22px;}
+.tgl-sw input{opacity:0;width:0;height:0;}
+.tgl-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
+  background:#ccd6e0;border-radius:22px;transition:.2s;}
+.tgl-slider:before{position:absolute;content:"";height:16px;width:16px;left:3px;bottom:3px;
+  background:white;border-radius:50%;transition:.2s;box-shadow:0 1px 4px rgba(0,0,0,0.2);}
+input:checked+.tgl-slider{background:var(--blue);}
+input:checked+.tgl-slider:before{transform:translateX(18px);}
+/* Section header */
+.plugin-section-hdr{
+  display:flex;align-items:center;gap:10px;margin:8px 0 14px;
+  font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--navy-4);
+}
+.plugin-section-hdr::after{content:'';flex:1;height:1px;background:var(--border);}
+/* Coming soon card */
+.cs-card{
+  background:var(--bg-2);border:1px dashed var(--border);border-radius:12px;
+  padding:18px 20px;display:flex;flex-direction:column;gap:8px;opacity:0.7;
+}
+/* API key details */
+details.api-details summary{
+  cursor:pointer;font-size:11px;font-weight:600;color:var(--blue);
+  list-style:none;padding:4px 0;
+}
+details.api-details summary::before{content:'▶ ';}
+details.api-details[open] summary::before{content:'▼ ';}
+details.api-details .api-body{padding:10px 0 4px;}
+</style>
+</head>
+<body data-page="plugins">""" + _TOPBAR + """
+<div class="page">
+  <div style="margin-bottom:6px"><a href="/" class="plain">&larr; Back to Dashboard</a></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+    <div>
+      <div style="font-size:22px;font-weight:800;color:var(--navy)">Plugins &amp; Scanners</div>
+      <div class="muted" style="margin-top:3px">Plugins run automatically during Stage 2 analysis. Toggle to enable or disable per installation.</div>
+    </div>
+  </div>
+
+  {# ── CORE SCANNERS ── #}
+  <div class="plugin-section-hdr">Core Scanners</div>
+  <div class="plugin-grid">
+  {% for p in plugin_meta if p.category == "Core Scanners" %}
+  {% set cfg_p = plugin_cfg.get(p.id, {}) %}
+  {% set is_on = cfg_p.get("enabled", True) %}
+  <div class="plugin-card{% if not is_on %} disabled-card{% endif %}">
+    <div class="plugin-top">
+      <div style="display:flex;gap:12px;align-items:flex-start;min-width:0">
+        <div class="plugin-icon">{{ p.icon|safe }}</div>
+        <div>
+          <div class="plugin-name">{{ p.name }}</div>
+          <div class="plugin-cat">{{ p.category }}</div>
+        </div>
+      </div>
+      <form method="post" action="/plugins/save" class="toggle-wrap">
+        <input type="hidden" name="plugin_id" value="{{ p.id }}"/>
+        <label class="toggle-label">{{ "ON" if is_on else "OFF" }}</label>
+        <label class="tgl-sw">
+          <input type="checkbox" name="enabled" {% if is_on %}checked{% endif %}
+            onchange="this.form.submit()"/>
+          <span class="tgl-slider"></span>
+        </label>
+      </form>
+    </div>
+    <div class="plugin-desc">{{ p.description }}</div>
+    <div class="plugin-tags">
+      {% for tag in p.tags %}<span class="plugin-tag">{{ tag }}</span>{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+
+  {# ── EXTERNAL INTEGRATIONS ── #}
+  <div class="plugin-section-hdr">External Integrations</div>
+  <div class="plugin-grid">
+  {% for p in plugin_meta if p.category == "External Integrations" %}
+  {% set cfg_p = plugin_cfg.get(p.id, {}) %}
+  {% set is_on = cfg_p.get("enabled", False) %}
+  {% set has_key = cfg_p.get("api_key", "") %}
+  <div class="plugin-card{% if not is_on %} disabled-card{% endif %}">
+    <div class="plugin-top">
+      <div style="display:flex;gap:12px;align-items:flex-start;min-width:0">
+        <div class="plugin-icon">{{ p.icon|safe }}</div>
+        <div>
+          <div class="plugin-name">{{ p.name }}</div>
+          <div class="plugin-cat">{{ p.category }}</div>
+        </div>
+      </div>
+      <form method="post" action="/plugins/save" class="toggle-wrap">
+        <input type="hidden" name="plugin_id" value="{{ p.id }}"/>
+        <label class="toggle-label">{{ "ON" if is_on else "OFF" }}</label>
+        <label class="tgl-sw">
+          <input type="checkbox" name="enabled" {% if is_on %}checked{% endif %}
+            onchange="this.form.submit()"/>
+          <span class="tgl-slider"></span>
+        </label>
+      </form>
+    </div>
+    <div class="plugin-desc">{{ p.description }}</div>
+    <div class="plugin-tags">
+      {% for tag in p.tags %}<span class="plugin-tag">{{ tag }}</span>{% endfor %}
+    </div>
+    {# API key config #}
+    <details class="api-details">
+      <summary>{{ p.api_key_label }} configuration</summary>
+      <div class="api-body">
+        <form method="post" action="/plugins/save" style="display:flex;gap:8px;align-items:center">
+          <input type="hidden" name="plugin_id" value="{{ p.id }}"/>
+          {% if is_on %}<input type="hidden" name="enabled" value="on"/>{% endif %}
+          <input type="text" name="api_key" value="{{ has_key }}"
+            placeholder="Paste API key here…"
+            style="flex:1;font-family:monospace;font-size:12px;padding:6px 10px"/>
+          <button type="submit" class="btn btn-primary btn-sm">Save</button>
+        </form>
+        <div class="input-hint" style="margin-top:6px">
+          Get your key at <a href="{{ p.api_key_url }}" target="_blank" rel="noopener" class="plain">{{ p.api_key_url }}</a>
+        </div>
+        {% if has_key %}
+        <div style="margin-top:6px;font-size:11px;color:var(--success)">&#10003; API key configured ({{ has_key[:4] }}…)</div>
+        {% endif %}
+      </div>
+    </details>
+  </div>
+  {% endfor %}
+  </div>
+
+  {# ── COMING SOON ── #}
+  <div class="plugin-section-hdr">Coming Soon</div>
+  <div class="plugin-grid">
+    <div class="cs-card">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div class="plugin-icon">&#128196;</div>
+        <div>
+          <div class="plugin-name">YARA Rules Engine</div>
+          <div class="plugin-cat">Core Scanners</div>
+        </div>
+      </div>
+      <div class="plugin-desc">Custom YARA rule sets for malware signatures, threat actor TTPs, and proprietary data patterns. Import any .yar rule file.</div>
+      <div class="plugin-tags">
+        <span class="plugin-tag">YARA</span>
+        <span class="plugin-tag">Malware</span>
+        <span class="plugin-tag">Custom Rules</span>
+      </div>
+      <span class="badge badge-silver" style="width:fit-content">Coming Soon</span>
+    </div>
+    <div class="cs-card">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div class="plugin-icon">&#128295;</div>
+        <div>
+          <div class="plugin-name">Custom Plugin SDK</div>
+          <div class="plugin-cat">Developer Tools</div>
+        </div>
+      </div>
+      <div class="plugin-desc">Build and deploy your own Vectrion plugins using the Plugin SDK. Implement scan_file() / scan_vault() and drop in the plugins/ directory.</div>
+      <div class="plugin-tags">
+        <span class="plugin-tag">Python SDK</span>
+        <span class="plugin-tag">Custom</span>
+        <span class="plugin-tag">Extensible</span>
+      </div>
+      <span class="badge badge-silver" style="width:fit-content">Coming Soon</span>
+    </div>
+  </div>
+
+</div>
+</body></html>"""
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SETUP WIZARD
 # ─────────────────────────────────────────────────────────────────────────────
 SETUP_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
@@ -1650,6 +1845,84 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
         {% endif %}
       </div>
       {% endif %}
+
+      {# ── Additional Scanner Results ── #}
+      {% if rb_plugin_results %}
+      <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px">Additional Scanner Results</div>
+        {% for pid, result in rb_plugin_results.items() %}
+        <details style="margin-bottom:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+          <summary style="cursor:pointer;padding:10px 14px;background:var(--bg-2);display:flex;align-items:center;gap:10px;list-style:none">
+            <span style="font-weight:600;flex:1;font-size:13px">{{ result.get("scanner_name", pid) }}</span>
+            {% set tot = result.get("total_findings", 0) %}
+            {% if result.get("critical_count", 0) %}
+            <span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">&#9888; {{ result.critical_count }} Critical</span>
+            {% endif %}
+            {% if result.get("high_count", 0) %}
+            <span style="background:#fff7ed;color:#9a3412;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">&#9650; {{ result.high_count }} High</span>
+            {% endif %}
+            {% if result.get("medium_count", 0) %}
+            <span style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">&#9679; {{ result.get("medium_count",0) }} Medium</span>
+            {% endif %}
+            {% if tot == 0 %}
+            <span style="background:#d1fae5;color:#065f46;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">&#10003; Clean</span>
+            {% else %}
+            <span style="background:#fee2e2;color:#991b1b;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700">{{ tot }} finding{{ "s" if tot != 1 else "" }}</span>
+            {% endif %}
+          </summary>
+          <div style="padding:12px 14px">
+            {% if tot > 0 %}
+            <div style="overflow-x:auto">
+            <table style="font-size:12px;margin-bottom:0">
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Type</th>
+                  <th>File</th>
+                  <th>Line</th>
+                  <th>Hash (SHA-256 prefix)</th>
+                </tr>
+              </thead>
+              <tbody>
+              {% for f in result.get("findings", [])[:50] %}
+              <tr>
+                <td>
+                  {% if f.severity == "critical" %}
+                  <span style="color:#dc2626;font-weight:700">&#9888; CRITICAL</span>
+                  {% elif f.severity == "high" %}
+                  <span style="color:#ea580c;font-weight:600">&#9650; HIGH</span>
+                  {% elif f.severity == "medium" %}
+                  <span style="color:#d97706;font-weight:600">&#9679; MEDIUM</span>
+                  {% else %}
+                  <span style="color:#6b7280">{{ f.severity|upper }}</span>
+                  {% endif %}
+                </td>
+                <td style="font-weight:500">{{ f.detector }}</td>
+                <td style="color:var(--muted);font-family:monospace;font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ f.get('original_name', f.source_file) }}">{{ f.get("original_name", f.source_file) }}</td>
+                <td style="font-family:monospace;text-align:right">{{ f.line }}</td>
+                <td style="font-family:monospace;color:var(--muted);font-size:11px">{{ f.secret_hash }}…</td>
+              </tr>
+              {% endfor %}
+              {% if result.get("findings", [])|length > 50 %}
+              <tr><td colspan="5" style="text-align:center;color:var(--muted);font-size:11px">… and {{ result.get("findings",[])|length - 50 }} more findings</td></tr>
+              {% endif %}
+              </tbody>
+            </table>
+            </div>
+            <p style="font-size:11px;color:var(--muted);margin-top:8px">
+              &#128274; Raw values are never stored. Hashes shown for deduplication only.
+            </p>
+            {% else %}
+            <p style="font-size:13px;color:#065f46;margin:0">
+              &#10003; No findings in {{ result.get("files_scanned", [])|length }} file{{ "s" if result.get("files_scanned",[])|length != 1 else "" }} scanned.
+            </p>
+            {% endif %}
+          </div>
+        </details>
+        {% endfor %}
+      </div>
+      {% endif %}
+
     </div>
     {% endif %}
 
@@ -2430,7 +2703,7 @@ def _size_label(b: int) -> str:
 # Keys cleared per stage re-run (each stage clears its own + all downstream)
 _RERUN_KEYS: dict[str, list[str]] = {
     "1": ["incident", "evidence", "evidence_files", "ingest"],
-    "2": ["extracted", "pii_summary", "normalization_stats", "secrets_scan"],
+    "2": ["extracted", "pii_summary", "normalization_stats", "secrets_scan", "plugin_results"],
     "3": ["sensitivity_classification", "applicable_laws"],
     "4": ["affected_people", "identity_scores", "entity_resolution"],
     "5": ["impact_summary", "timeline", "chain_of_custody"],
@@ -2668,6 +2941,30 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         save_config(workdir, cfg)
         return redirect(url_for("config_panel"))
 
+    @app.get("/plugins")
+    def plugins_page():
+        from vectrion.plugins.registry import load_plugin_config, _PLUGIN_META
+        cfg = load_plugin_config(workdir)
+        return render_template_string(
+            PLUGINS_TMPL,
+            active_nav="plugins",
+            page_title="Plugins",
+            plugin_meta=_PLUGIN_META,
+            plugin_cfg=cfg,
+        )
+
+    @app.post("/plugins/save")
+    def plugins_save():
+        from vectrion.plugins.registry import load_plugin_config, save_plugin_config
+        cfg = load_plugin_config(workdir)
+        plugin_id = request.form.get("plugin_id", "")
+        if plugin_id and plugin_id in cfg:
+            cfg[plugin_id]["enabled"] = bool(request.form.get("enabled"))
+            if "api_key" in request.form:
+                cfg[plugin_id]["api_key"] = request.form.get("api_key", "").strip()
+            save_plugin_config(workdir, cfg)
+        return redirect(url_for("plugins_page"))
+
     @app.get("/engagements/new")
     def new_engagement():
         cfg = load_config(workdir)
@@ -2765,6 +3062,7 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             rb_norm_stats=rb.get("normalization_stats", {}),
             rb_pii_kinds=rb_pii_kinds,
             rb_secrets_scan=rb.get("secrets_scan", {}),
+            rb_plugin_results=rb.get("plugin_results", {}),
             rb_sensitivity=rb_sensitivity,
             rb_applicable_laws=list(rb.get("applicable_laws", {}).keys()),
             rb_affected=rb.get("affected_people", []),
@@ -2788,11 +3086,12 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         current = s.get("current_layer")
         if current:
             vault_dir = _upload_dir(workdir, engagement_id)
+            ctx = {**s, "workdir": str(workdir)}
             updated = run_layer(
                 s.get("runbook", {}), current, dd, Path(workdir) / "exports",
                 vault_dir=vault_dir,
                 engagement_id=engagement_id,
-                context=s,
+                context=ctx,
             )
             s["runbook"] = updated
             done = s.get("completed_layers", [])
