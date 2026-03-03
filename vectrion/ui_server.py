@@ -1616,8 +1616,14 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
           {% endif %}
         </div>
       </div>
-      <div style="font-family:monospace;font-size:13px;color:var(--silver-3);background:rgba(0,0,0,0.2);padding:6px 14px;border-radius:7px;font-weight:700;letter-spacing:2px">
-        {{ engagement_id }}
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-family:monospace;font-size:13px;color:var(--silver-3);background:rgba(0,0,0,0.2);padding:6px 14px;border-radius:7px;font-weight:700;letter-spacing:2px">
+          {{ engagement_id }}
+        </div>
+        <form method="post" action="/engagements/{{ engagement_id }}/delete"
+              onsubmit="return confirm('Permanently delete engagement {{ engagement_id }} and all vault files? This cannot be undone.')">
+          <button type="submit" class="btn btn-danger btn-sm">&#128465; Delete</button>
+        </form>
       </div>
     </div>
     <div class="client-block-meta" style="margin-top:16px">
@@ -3528,6 +3534,27 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         storage.save_state_obj(engagement_id, s)
         storage.audit(engagement_id, "stage_rerun", {"stage": stage, "cleared_keys": sorted(keys_to_clear)})
         return redirect(url_for("engagement_detail", engagement_id=engagement_id))
+
+    # ── DELETE ENGAGEMENT ─────────────────────────────────────────────────────
+    @app.post("/engagements/<engagement_id>/delete")
+    def engagement_delete(engagement_id: str):
+        import shutil
+        s = storage.load_state_obj(engagement_id)
+        if not s:
+            return redirect(url_for("home"))
+        # Remove state file
+        state_path = storage.state_dir / f"{engagement_id}.json"
+        if state_path.exists():
+            state_path.unlink()
+        # Remove vault uploads directory
+        vault_path = Path(workdir) / "uploads" / engagement_id
+        if vault_path.exists():
+            shutil.rmtree(vault_path)
+        # Remove audit log
+        audit_path = Path(workdir) / "audit" / f"{engagement_id}.jsonl"
+        if audit_path.exists():
+            audit_path.unlink()
+        return redirect(url_for("home"))
 
     # ── SQL QUERY ─────────────────────────────────────────────────────────────
     @app.post("/engagements/<engagement_id>/query")
