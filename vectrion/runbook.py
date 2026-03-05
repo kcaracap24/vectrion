@@ -191,7 +191,7 @@ def run_layer(
     # ── Stage A — Confirmed Scope Handoff & Data Intake ───────────────────────
     if letter == "A":
         if vault_index and vault_dir:
-            from vectrion.normalizer import normalize_vault
+            from vectrion.normalizer import normalize_vault, raw_rows_from_vault
             records = normalize_vault(vault_index, vault_dir)
 
             state["incident"] = {
@@ -213,6 +213,21 @@ def run_layer(
                 "record_count":  len(records),
                 "files":         [f.get("original_name") for f in vault_index],
             }
+
+            # ── Bronze write ──────────────────────────────────────────────────
+            if engagement_id:
+                try:
+                    from vectrion.analysis_db import get_db_path, write_bronze_structured, write_bronze_text
+                    _workdir = (context or {}).get("workdir", ".vectrion")
+                    db_path = get_db_path(_workdir, engagement_id)
+                    raw_by_file = raw_rows_from_vault(vault_index, vault_dir)
+                    for orig_name, rows in raw_by_file.items():
+                        if rows and "_text" in rows[0]:
+                            write_bronze_text(db_path, orig_name, [r.get("_text", "") for r in rows])
+                        else:
+                            write_bronze_structured(db_path, orig_name, rows)
+                except Exception:
+                    pass
         else:
             # Demo data fallback
             incident_csv = data_dir / "incident.csv"
@@ -232,6 +247,15 @@ def run_layer(
 
     # ── Stage B — Data Normalization & Structuring ───────────────────────────
     elif letter == "B":
+        # Extend field map with user-defined aliases before extraction
+        field_config = (context or {}).get("field_config", state.get("field_config", {}))
+        if field_config.get("user_fields"):
+            try:
+                from vectrion.normalizer import extend_field_map
+                extend_field_map(field_config["user_fields"])
+            except Exception:
+                pass
+
         extractor = DeterministicExtractor()
         extracted_rows = []
         pii_summary = []
@@ -279,6 +303,16 @@ def run_layer(
                     plugin_results[pid] = cls().scan_vault(vault_dir, vault_index)
         state["plugin_results"] = plugin_results
 
+        # ── Silver write ──────────────────────────────────────────────────────
+        if engagement_id and vault_index:
+            try:
+                from vectrion.analysis_db import get_db_path, write_silver
+                _workdir = (context or {}).get("workdir", ".vectrion")
+                db_path = get_db_path(_workdir, engagement_id)
+                write_silver(db_path, field_config, extracted_rows)
+            except Exception:
+                pass
+
     # ── Stage C — Sensitive Information Classification ───────────────────────
     elif letter == "C":
         from vectrion.normalizer import summarize_records
@@ -301,6 +335,15 @@ def run_layer(
         }
         state["data_summary"] = summary
         state["applicable_laws"] = _infer_applicable_laws(tier_counts, client)
+
+        # ── Gold write (initial pass) ─────────────────────────────────────────
+        if engagement_id:
+            try:
+                from vectrion.analysis_db import get_db_path, write_gold
+                _workdir = (context or {}).get("workdir", ".vectrion")
+                write_gold(get_db_path(_workdir, engagement_id), state)
+            except Exception:
+                pass
 
     # ── Stage D — Entity Resolution & Record Consolidation ───────────────────
     elif letter == "D":
@@ -353,6 +396,15 @@ def run_layer(
             "unique_affected_people": len(affected_people),
             "dedup_emails":          len(seen_emails),
         }
+
+        # ── Gold write (with affected_people populated) ───────────────────────
+        if engagement_id:
+            try:
+                from vectrion.analysis_db import get_db_path, write_gold
+                _workdir = (context or {}).get("workdir", ".vectrion")
+                write_gold(get_db_path(_workdir, engagement_id), state)
+            except Exception:
+                pass
 
     # ── Stage E — Impact Quantification & Jurisdictional Mapping ────────────
     elif letter == "E":

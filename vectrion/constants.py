@@ -4,6 +4,8 @@ LEGAL_DISCLAIMER = (
     "Do not treat as legal advice."
 )
 
+LAYER_ORDER = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
 DEFAULT_STAGES = [
     {"id": "1", "name": "Confirmed Scope Handoff & Data Intake"},
     {"id": "2", "name": "Data Normalization & Structuring"},

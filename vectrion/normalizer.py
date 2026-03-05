@@ -371,6 +371,187 @@ def _records_from_text(text: str, source_name: str, source_type: str = "document
 # PUBLIC API
 # ─────────────────────────────────────────────────────────────────────────────
 
+def extend_field_map(user_fields: list[dict]) -> None:
+    """
+    Register user-defined field aliases into _FIELD_MAP at runtime.
+    Each field: {"name": "employee_id", "search_terms": ["emp_id", "staff_id"]}
+    Adds _FIELD_MAP["emp_id"] = "employee_id" etc. before normalization runs.
+    """
+    for field in user_fields:
+        canonical = (field.get("name") or "").strip()
+        if not canonical:
+            continue
+        # Also map the canonical name to itself
+        _FIELD_MAP[_norm_key(canonical)] = canonical
+        for term in field.get("search_terms", []):
+            norm = _norm_key(term)
+            if norm:
+                _FIELD_MAP[norm] = canonical
+
+
+# ── RAW ROWS (no normalization) ───────────────────────────────────────────────
+
+def _raw_rows_from_csv(path: Path) -> list[dict]:
+    """Return raw row dicts from CSV without any field mapping."""
+    rows: list[dict] = []
+    sample = path.read_bytes()[:4096].decode("utf-8", errors="replace")
+    sniffer = csv.Sniffer()
+    try:
+        dialect = sniffer.sniff(sample, delimiters=",\t;|")
+    except csv.Error:
+        dialect = csv.excel  # type: ignore[assignment]
+    with path.open(newline="", encoding="utf-8", errors="replace") as f:
+        reader = csv.DictReader(f, dialect=dialect)
+        for i, row in enumerate(reader):
+            if i >= 50_000:
+                break
+            rows.append(dict(row))
+    return rows
+
+
+def _raw_rows_from_json(path: Path) -> list[dict]:
+    """Return raw row dicts from JSON/JSONL without any field mapping."""
+    rows: list[dict] = []
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+        if path.suffix.lower() == ".jsonl":
+            for ln in content.splitlines():
+                ln = ln.strip()
+                if ln:
+                    try:
+                        obj = json.loads(ln)
+                        if isinstance(obj, dict):
+                            rows.append(obj)
+                    except Exception:
+                        pass
+        else:
+            obj = json.loads(content)
+            if isinstance(obj, list):
+                raw = obj
+            elif isinstance(obj, dict):
+                raw = []
+                for v in obj.values():
+                    if isinstance(v, list) and v and isinstance(v[0], dict):
+                        raw = v
+                        break
+                if not raw:
+                    raw = [obj]
+            else:
+                raw = []
+            for item in raw:
+                if isinstance(item, dict):
+                    rows.append(item)
+        rows = rows[:50_000]
+    except Exception:
+        pass
+    return rows
+
+
+def _raw_rows_from_xlsx(path: Path) -> list[dict]:
+    """Return raw row dicts from XLSX without any field mapping."""
+    rows: list[dict] = []
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, data_only=True)
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            all_rows = list(ws.iter_rows(values_only=True))
+            if not all_rows:
+                continue
+            header_row = next((r for r in all_rows if any(c is not None for c in r)), None)
+            if header_row is None:
+                continue
+            headers = [str(c or "").strip() for c in header_row]
+            header_idx = all_rows.index(header_row)
+            for row in all_rows[header_idx + 1:]:
+                if all(c is None for c in row):
+                    continue
+                row_dict = {
+                    headers[i]: ("" if row[i] is None else str(row[i]).strip())
+                    for i in range(min(len(headers), len(row)))
+                }
+                rows.append(row_dict)
+                if len(rows) >= 50_000:
+                    break
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    return rows
+
+
+def _raw_rows_from_xml(path: Path) -> list[dict]:
+    """Return raw row dicts from XML without any field mapping."""
+    rows: list[dict] = []
+    try:
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(path)
+        root = tree.getroot()
+        child_counts: dict[str, int] = {}
+        for child in root:
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            child_counts[tag] = child_counts.get(tag, 0) + 1
+        if not child_counts:
+            return rows
+        record_tag = max(child_counts, key=child_counts.get)
+        for elem in root:
+            tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+            if tag != record_tag:
+                continue
+            row: dict[str, str] = dict(elem.attrib)
+            for child in elem:
+                ct = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                row[ct] = child.text or ""
+            rows.append(row)
+            if len(rows) >= 50_000:
+                break
+    except Exception:
+        pass
+    return rows
+
+
+def raw_rows_from_vault(vault_index: list[dict], vault_dir: Path) -> dict[str, list[dict]]:
+    """
+    Return {original_name: [raw_row_dicts]} for each vault file.
+    Structured files (CSV/XLSX/JSON/XML): raw column names and values preserved,
+    no _FIELD_MAP normalization applied.
+    Unstructured files: [{"_text": chunk, "_chunk": i}] per paragraph chunk.
+    """
+    result: dict[str, list[dict]] = {}
+    for file_record in vault_index:
+        fname = file_record["filename"]
+        source_name = file_record.get("original_name", fname)
+        file_path = vault_dir / fname
+        ext = Path(fname).suffix.lower()
+
+        rows: list[dict] = []
+        try:
+            if ext in (".csv", ".tsv") and file_path.exists():
+                rows = _raw_rows_from_csv(file_path)
+            elif ext in (".json", ".jsonl") and file_path.exists():
+                rows = _raw_rows_from_json(file_path)
+            elif ext in (".xlsx", ".xls") and file_path.exists():
+                rows = _raw_rows_from_xlsx(file_path)
+            elif ext == ".xml" and file_path.exists():
+                rows = _raw_rows_from_xml(file_path)
+            else:
+                # Unstructured: return text chunks
+                text_path = vault_dir / (fname + ".txt")
+                if text_path.exists():
+                    text = text_path.read_text(encoding="utf-8", errors="replace")
+                    paragraphs = re.split(r"\n{2,}", text.strip()) if text.strip() else []
+                    rows = [
+                        {"_text": p, "_chunk": str(i)}
+                        for i, p in enumerate(paragraphs)
+                        if p.strip()
+                    ]
+        except Exception:
+            pass
+
+        result[source_name] = rows
+    return result
+
+
 def normalize_vault_file(file_record: dict, vault_dir: Path) -> list[dict]:
     """
     Normalize one vault file into structured evidence records.

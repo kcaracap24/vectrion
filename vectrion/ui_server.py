@@ -456,6 +456,17 @@ pre{
 .vc-input:focus{border-color:var(--blue-light)!important;box-shadow:0 0 0 2px rgba(59,130,246,0.2)!important;}
 .vc-send{background:var(--blue);color:#fff;border:none;border-radius:7px;padding:7px 13px;font-size:13px;cursor:pointer;flex-shrink:0;}
 .vc-send:hover{background:#1a44c4;}
+
+/* ── PLUGIN LANGUAGE BADGES ── */
+.lang-badge{font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;text-transform:uppercase;display:inline-block;}
+.lang-python {background:#1e40af;color:#93c5fd;}
+.lang-node   {background:#14532d;color:#86efac;}
+.lang-java   {background:#7c2d12;color:#fca5a5;}
+.lang-bash   {background:#1e3a5f;color:#7dd3fc;}
+.lang-go     {background:#0f4c5c;color:#67e8f9;}
+.lang-ruby   {background:#4c1130;color:#f9a8d4;}
+.lang-rust   {background:#431407;color:#fdba74;}
+.lang-unknown{background:var(--navy-3);color:var(--silver);}
 </style>"""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -932,6 +943,7 @@ NEW_ENG_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
             <label class="check-item"><input type="checkbox" name="breach_type[]" value="Lost / Stolen Device"/> Lost / Stolen Device</label>
             <label class="check-item"><input type="checkbox" name="breach_type[]" value="Third-Party Vendor"/> Third-Party Vendor</label>
             <label class="check-item"><input type="checkbox" name="breach_type[]" value="Other"/> Other</label>
+            <label class="check-item"><input type="checkbox" name="breach_type[]" value="Not Sure"/> Not Sure</label>
           </div>
         </div>
         <div class="form-group" style="margin-top:18px">
@@ -945,6 +957,7 @@ NEW_ENG_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
             <label class="check-item"><input type="checkbox" name="data_types[]" value="IP / Trade Secrets"/> IP / Trade Secrets</label>
             <label class="check-item"><input type="checkbox" name="data_types[]" value="Employee Records"/> Employee Records</label>
             <label class="check-item"><input type="checkbox" name="data_types[]" value="Other"/> Other</label>
+            <label class="check-item"><input type="checkbox" name="data_types[]" value="Not Sure"/> Not Sure</label>
           </div>
         </div>
         <div class="form-row form-row-2" style="margin-top:18px">
@@ -959,6 +972,7 @@ NEW_ENG_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
               <label class="radio-item"><input type="radio" name="contained" value="Yes"/> Yes</label>
               <label class="radio-item"><input type="radio" name="contained" value="No"/> No</label>
               <label class="radio-item"><input type="radio" name="contained" value="Unknown" checked/> Unknown</label>
+              <label class="radio-item"><input type="radio" name="contained" value="Not Sure"/> Not Sure</label>
             </div>
           </div>
         </div>
@@ -1429,17 +1443,21 @@ details.api-details .api-body{padding:10px 0 4px;}
     <form method="post" action="/plugins/upload" enctype="multipart/form-data"
           style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
       <label class="btn btn-secondary" style="cursor:pointer;margin:0">
-        &#128193;&nbsp; Choose .py File
-        <input type="file" name="file" accept=".py" style="display:none" onchange="this.form.submit()"/>
+        &#128193;&nbsp; Choose File
+        <input type="file" name="file" accept=".py,.zip" style="display:none" onchange="this.form.submit()"/>
       </label>
-      <a href="/plugins/sdk-template" class="plain" style="font-size:13px">&#11015; Download SDK template &rarr;</a>
+      <span style="color:var(--muted);font-size:12px">SDK starters:</span>
+      <a href="/plugins/sdk-template" class="plain" style="font-size:13px">&#11015; Python</a>
+      <a href="/plugins/sdk/node"     class="plain" style="font-size:13px">&#11015; Node.js</a>
+      <a href="/plugins/sdk/java"     class="plain" style="font-size:13px">&#11015; Java</a>
+      <a href="/plugins/sdk/bash"     class="plain" style="font-size:13px">&#11015; Bash</a>
+      <a href="/plugins/sdk/go"       class="plain" style="font-size:13px">&#11015; Go</a>
     </form>
     <div class="input-hint" style="margin-top:10px">
-      Your class must implement
-      <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">scan_file()</code>
-      and
-      <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">scan_vault()</code>.
-      Set a <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">display_name</code> class attribute.
+      Upload a <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">.py</code> file (legacy Python)
+      or a <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">.zip</code> bundle containing a
+      <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">plugin.json</code> manifest
+      and your scanner entry point. Supports Python, Node.js, Java, Bash, Go, Ruby, and Rust.
     </div>
   </div>
 
@@ -1447,13 +1465,18 @@ details.api-details .api-body{padding:10px 0 4px;}
   {% if custom_plugins %}
   <div class="plugin-grid">
   {% for cp in custom_plugins %}
+  {% set cp_ref = cp.get('filename') or cp.get('dirname', '') %}
+  {% set cp_lang = cp.get('language', 'unknown') %}
   <div class="plugin-card{% if cp.error %} disabled-card{% endif %}">
     <div class="plugin-top">
       <div style="display:flex;gap:12px;align-items:flex-start;min-width:0">
         <div class="plugin-icon">&#9881;</div>
         <div>
           <div class="plugin-name">{{ cp.name }}</div>
-          <div class="plugin-cat">Custom Plugin &mdash; {{ cp.filename }}</div>
+          <div class="plugin-cat" style="display:flex;align-items:center;gap:6px;margin-top:2px">
+            <span>Custom Plugin &mdash; {{ cp_ref }}</span>
+            <span class="lang-badge lang-{{ cp_lang }}">{{ cp_lang }}</span>
+          </div>
         </div>
       </div>
       {% if cp.error %}
@@ -1467,17 +1490,18 @@ details.api-details .api-body{padding:10px 0 4px;}
       {{ cp.error }}
     </div>
     {% endif %}
-    <form method="post" action="/plugins/custom/{{ cp.filename | urlencode }}/remove"
+    <form method="post" action="/plugins/custom/{{ cp_ref | urlencode }}/remove"
           style="display:flex;justify-content:flex-end;margin-top:4px">
       <button type="submit" class="btn btn-danger btn-sm"
-              onclick="return confirm('Remove {{ cp.filename }}?')">&#x2715;&nbsp; Remove</button>
+              onclick="return confirm('Remove {{ cp_ref }}?')">&#x2715;&nbsp; Remove</button>
     </form>
   </div>
   {% endfor %}
   </div>
   {% else %}
   <div style="color:var(--muted);font-size:13px;padding:10px 0 20px">
-    No custom plugins installed. Upload a <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">.py</code> file above to get started.
+    No custom plugins installed. Upload a <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">.py</code> file
+    or a <code style="background:var(--bg-2);padding:1px 5px;border-radius:3px;font-family:monospace">.zip</code> bundle above to get started.
   </div>
   {% endif %}
 
@@ -1732,9 +1756,16 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
           <div style="font-weight:700;color:var(--navy)">Next: Stage {{ current_layer }}</div>
           <div class="muted" style="font-size:12px;margin-top:2px">{{ current_stage_name }}</div>
         </div>
+        {% if vault_files|length == 0 and all_stages and current_layer == all_stages[0].id %}
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
+          <button class="btn btn-primary" type="button" disabled style="opacity:0.4;cursor:not-allowed">&#9658;&nbsp; Run Stage {{ current_layer }}</button>
+          <div style="font-size:12px;color:var(--muted)">&#9888;&nbsp; <a href="#" onclick="switchTab('vault');return false;" style="color:var(--blue)">Upload files to the Data Vault</a> first</div>
+        </div>
+        {% else %}
         <form method="post" action="/engagements/{{ engagement_id }}/proceed">
           <button class="btn btn-primary" type="submit">&#9658;&nbsp; Run Stage {{ current_layer }}</button>
         </form>
+        {% endif %}
       </div>
       {% else %}
       <div style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:9px;padding:16px 20px;color:var(--success);font-weight:700;font-size:15px">
@@ -1814,6 +1845,64 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
         <span class="fmt-chip">TIFF</span><span class="fmt-chip">MP4</span>
         <span class="fmt-chip">MOV</span><span class="fmt-chip">AVI</span>
         <span class="fmt-chip" style="background:var(--navy-4)">+more</span>
+      </div>
+    </div>
+
+    <!-- Field Configuration panel -->
+    <div class="card" id="field-config-card" style="margin-top:22px">
+      <div class="card-header">
+        <div class="card-title">&#128269; What Are You Looking For?</div>
+        <div style="margin-left:auto;font-size:12px;color:var(--muted)">Configure before running Stage 1</div>
+      </div>
+
+      <!-- Preset categories -->
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">Standard Categories</div>
+      <div id="preset-grid" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+        <label id="preset-identity" style="display:flex;align-items:center;gap:5px;padding:5px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;user-select:none;transition:all 0.12s">
+          <input type="checkbox" value="identity" onchange="togglePreset(this)" style="margin:0"> &#128100; Identity
+        </label>
+        <label id="preset-financial" style="display:flex;align-items:center;gap:5px;padding:5px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;user-select:none;transition:all 0.12s">
+          <input type="checkbox" value="financial" onchange="togglePreset(this)" style="margin:0"> &#128181; Financial
+        </label>
+        <label id="preset-medical" style="display:flex;align-items:center;gap:5px;padding:5px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;user-select:none;transition:all 0.12s">
+          <input type="checkbox" value="medical" onchange="togglePreset(this)" style="margin:0"> &#9877;&#65039; Medical
+        </label>
+        <label id="preset-credentials" style="display:flex;align-items:center;gap:5px;padding:5px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;user-select:none;transition:all 0.12s">
+          <input type="checkbox" value="credentials" onchange="togglePreset(this)" style="margin:0"> &#128274; Credentials
+        </label>
+        <label id="preset-network" style="display:flex;align-items:center;gap:5px;padding:5px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;user-select:none;transition:all 0.12s">
+          <input type="checkbox" value="network" onchange="togglePreset(this)" style="margin:0"> &#127760; Network
+        </label>
+      </div>
+
+      <!-- Custom fields table -->
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">Custom Fields (company-specific)</div>
+      <div style="overflow-x:auto">
+      <table id="custom-fields-table" style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">
+        <thead>
+          <tr style="background:var(--bg-2)">
+            <th style="text-align:left;padding:7px 10px;border:1px solid var(--border);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted)">Field Name</th>
+            <th style="text-align:left;padding:7px 10px;border:1px solid var(--border);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted)">Also look for these column names (comma-separated)</th>
+            <th style="text-align:left;padding:7px 10px;border:1px solid var(--border);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted)">Sensitivity</th>
+            <th style="width:36px;border:1px solid var(--border)"></th>
+          </tr>
+        </thead>
+        <tbody id="custom-fields-body"></tbody>
+      </table>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="addCustomField()" style="margin-bottom:14px">+ Add Custom Field</button>
+
+      <!-- Auto-discover toggle -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <input type="checkbox" id="auto-discover-toggle" checked style="width:15px;height:15px">
+        <label for="auto-discover-toggle" style="font-size:13px;cursor:pointer;font-weight:500">
+          Also auto-discover all additional fields found in the data
+        </label>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-primary btn-sm" onclick="saveFieldConfig()">&#10003; Save Configuration</button>
+        <span id="field-config-status" style="font-size:12px;color:var(--muted)"></span>
       </div>
     </div>
 
@@ -2418,29 +2507,29 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
 
     <div style="display:grid;grid-template-columns:260px 1fr;gap:18px;align-items:flex-start">
 
-      <!-- ── Left sidebar ── -->
+      <!-- ── Left sidebar: Medallion Schema Browser ── -->
       <div>
 
-        <!-- Schema card -->
+        <!-- Layer tabs -->
         <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
-          <div style="padding:11px 16px;background:var(--navy);display:flex;align-items:center">
-            <span style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--silver-2);text-transform:uppercase">Schema</span>
-            <button onclick="toggleAliases()" style="margin-left:auto;background:rgba(255,255,255,0.07);border:1px solid var(--navy-3);color:var(--silver-2);font-size:11px;padding:3px 10px;border-radius:5px;cursor:pointer">&#9881; Rename</button>
+          <div style="padding:0;background:var(--navy);display:flex">
+            <button id="layer-tab-bronze" onclick="switchLayer('bronze')" style="flex:1;padding:10px 4px;border:none;border-bottom:2px solid #cd7f32;background:rgba(205,127,50,0.18);color:#cd7f32;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer">&#129483; Bronze</button>
+            <button id="layer-tab-silver" onclick="switchLayer('silver')" style="flex:1;padding:10px 4px;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--silver);font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer">&#129688; Silver</button>
+            <button id="layer-tab-gold" onclick="switchLayer('gold')" style="flex:1;padding:10px 4px;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--silver);font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer">&#129351; Gold</button>
           </div>
-          <div style="padding:12px 14px;font-family:monospace;font-size:11px;line-height:1.85;color:var(--navy)">
-            <div id="schema-tbl-records" class="schema-tbl" style="color:var(--blue);font-weight:700;cursor:pointer" onclick="useTable('records_alias')" title="Click to query this table">&#9654; <span id="lbl-records">records</span></div>
-            <div style="color:var(--muted);padding-left:12px;font-size:10px">record_id, source_file, name<br>email, phone, has_ssn&#42;, has_dob&#42;<br>has_mrn&#42;, has_cc&#42;, sensitivity_tier</div>
-            <div style="color:var(--blue);font-weight:700;margin-top:8px;cursor:pointer" onclick="useTable('affected_alias')" title="Click to query this table">&#9654; <span id="lbl-affected">affected_people</span></div>
-            <div style="color:var(--muted);padding-left:12px;font-size:10px">record_id, name, email, phone<br>has_ssn&#42;, has_dob&#42;, has_mrn&#42;<br>source, confidence</div>
-            <div style="color:var(--blue);font-weight:700;margin-top:8px;cursor:pointer" onclick="useTable('pii_alias')" title="Click to query this table">&#9654; <span id="lbl-pii">pii_detections</span></div>
-            <div style="color:var(--muted);padding-left:12px;font-size:10px">kind, confidence<br>evidence_ref, source_file, record_id</div>
-            <div style="color:var(--blue);font-weight:700;margin-top:8px;cursor:pointer" onclick="useTable('reg_alias')" title="Click to query this table">&#9654; <span id="lbl-reg">regulatory_triggers</span></div>
-            <div style="color:var(--muted);padding-left:12px;font-size:10px">law, triggered&#42;, deadline<br>filing_required&#42;, notes</div>
-            <div style="margin-top:10px;padding:7px 9px;background:var(--bg-2);border-radius:6px;font-size:9px;color:var(--muted);line-height:1.6;border:1px solid var(--border)">&#42; boolean fields: 1 = present, 0 = absent<br>No raw SSN / DOB / card values stored</div>
+          <div id="schema-panel-bronze" style="padding:10px 12px;font-family:monospace;font-size:11px">
+            <div id="schema-bronze-content" style="color:var(--muted);font-style:italic;font-size:10px">Loading&hellip;</div>
           </div>
+          <div id="schema-panel-silver" style="display:none;padding:10px 12px;font-family:monospace;font-size:11px">
+            <div id="schema-silver-content" style="color:var(--muted);font-style:italic;font-size:10px">Loading&hellip;</div>
+          </div>
+          <div id="schema-panel-gold" style="display:none;padding:10px 12px;font-family:monospace;font-size:11px">
+            <div id="schema-gold-content" style="color:var(--muted);font-style:italic;font-size:10px">Loading&hellip;</div>
+          </div>
+          <div style="padding:6px 12px 10px;background:var(--bg-2);border-top:1px solid var(--border);font-size:9px;color:var(--muted)">&#9654; Click a table name to query it</div>
         </div>
 
-        <!-- Rename panel (hidden by default) -->
+        <!-- Legacy rename panel (hidden by default) -->
         <div id="alias-panel" style="display:none">
           <div class="card" style="padding:0;overflow:hidden">
             <div style="padding:11px 16px;background:var(--navy)">
@@ -2480,14 +2569,21 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
         <div style="margin-bottom:14px">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">Preset Queries</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
-            <button class="btn btn-secondary btn-sm" onclick="setPreset('all')">All Records</button>
-            <button class="btn btn-secondary btn-sm" onclick="setPreset('ssn')">Has SSN</button>
-            <button class="btn btn-secondary btn-sm" onclick="setPreset('health')">Health Data</button>
-            <button class="btn btn-secondary btn-sm" onclick="setPreset('financial')">Financial Data</button>
-            <button class="btn btn-secondary btn-sm" onclick="setPreset('pii_type')">PII by Type</button>
+            <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;align-self:center;letter-spacing:0.8px">&#129483; Bronze</span>
+            <button class="btn btn-secondary btn-sm" onclick="setMedallionPreset('bronze_preview')">Preview Source</button>
+            <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;align-self:center;letter-spacing:0.8px">&#129688; Silver</span>
+            <button class="btn btn-secondary btn-sm" onclick="setMedallionPreset('silver_all')">All Silver</button>
+            <button class="btn btn-secondary btn-sm" onclick="setMedallionPreset('silver_high_risk')">High Risk</button>
+            <button class="btn btn-secondary btn-sm" onclick="setMedallionPreset('silver_people')">People</button>
+            <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;align-self:center;letter-spacing:0.8px">&#129351; Gold</span>
+            <button class="btn btn-secondary btn-sm" onclick="setMedallionPreset('gold_affected')">Affected People</button>
+            <button class="btn btn-secondary btn-sm" onclick="setMedallionPreset('gold_summary')">Exposure Summary</button>
+            <button class="btn btn-secondary btn-sm" onclick="setMedallionPreset('gold_by_field')">PII by Field</button>
+            <button class="btn btn-secondary btn-sm" onclick="setMedallionPreset('gold_file_risk')">File Risk</button>
+            <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;align-self:center;letter-spacing:0.8px">&#x25B8; Legacy</span>
+            <button class="btn btn-secondary btn-sm" onclick="setPreset('all')">Records</button>
+            <button class="btn btn-secondary btn-sm" onclick="setPreset('all_people')">Affected</button>
             <button class="btn btn-secondary btn-sm" onclick="setPreset('regulatory')">Regulatory</button>
-            <button class="btn btn-secondary btn-sm" onclick="setPreset('all_people')">All Affected People</button>
-            <button class="btn btn-secondary btn-sm" onclick="setPreset('crossref')">Cross-Reference</button>
           </div>
         </div>
 
@@ -2498,9 +2594,7 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
             <button onclick="copySQL()" style="margin-left:auto;background:rgba(255,255,255,0.07);border:1px solid var(--navy-3);color:var(--silver-2);font-size:11px;padding:3px 10px;border-radius:5px;cursor:pointer">&#128203; Copy</button>
           </div>
           <div style="padding:0">
-            <textarea id="sql-input" rows="5" spellcheck="false" style="width:100%;font-family:'Courier New',monospace;font-size:12px;line-height:1.75;resize:vertical;background:var(--navy);color:#93C5FD;border:none;border-bottom:1px solid var(--navy-3);padding:14px 16px;outline:none">SELECT record_id, source_file, name, email, has_ssn, has_dob, has_mrn, sensitivity_tier
-FROM records
-ORDER BY source_file;</textarea>
+            <textarea id="sql-input" rows="5" spellcheck="false" style="width:100%;font-family:'Courier New',monospace;font-size:12px;line-height:1.75;resize:vertical;background:var(--navy);color:#93C5FD;border:none;border-bottom:1px solid var(--navy-3);padding:14px 16px;outline:none">SELECT * FROM silver LIMIT 100;</textarea>
             <div style="padding:12px 16px;background:var(--bg-2);border-bottom:1px solid var(--border)">
               <label style="margin-bottom:5px">Query Note <span style="font-weight:400;text-transform:none;font-size:11px">(describe what this search is looking for)</span></label>
               <input type="text" id="query-note" placeholder="e.g. Identifying records with SSNs to assess notification scope..."/>
@@ -2601,6 +2695,218 @@ function setPreset(k) {
   if (_PRESETS[k]) document.getElementById('sql-input').value = _PRESETS[k]();
 }
 
+// ── Medallion Schema Browser ──
+let _currentLayer = 'bronze';
+let _schemaCache = null;
+
+function switchLayer(layer) {
+  _currentLayer = layer;
+  ['bronze','silver','gold'].forEach(l => {
+    const tab = document.getElementById('layer-tab-' + l);
+    const panel = document.getElementById('schema-panel-' + l);
+    if (!tab || !panel) return;
+    const active = l === layer;
+    const colors = {bronze:'#cd7f32', silver:'#a8a9ad', gold:'#ffd700'};
+    tab.style.borderBottom = active ? '2px solid ' + colors[l] : '2px solid transparent';
+    tab.style.background = active ? 'rgba(255,255,255,0.06)' : 'transparent';
+    tab.style.color = active ? colors[l] : 'var(--silver)';
+    panel.style.display = active ? 'block' : 'none';
+  });
+  if (_schemaCache) {
+    renderLayerPanel(layer, _schemaCache[layer] || {});
+  } else {
+    loadMedallionSchema();
+  }
+}
+
+function loadMedallionSchema() {
+  if (!_EID) return;
+  fetch('/engagements/' + _EID + '/schema')
+    .then(r => r.ok ? r.json() : {bronze:{}, silver:{}, gold:{}})
+    .then(schema => {
+      _schemaCache = schema;
+      renderLayerPanel(_currentLayer, schema[_currentLayer] || {});
+    })
+    .catch(() => {});
+}
+
+function renderLayerPanel(layer, tables) {
+  const el = document.getElementById('schema-' + layer + '-content');
+  if (!el) return;
+  const names = Object.keys(tables);
+  if (!names.length) {
+    const msgs = {
+      bronze: 'Run Stage 1 to populate Bronze tables.',
+      silver: 'Run Stage 2 to build the Silver table.',
+      gold:   'Run Stage 3+ to build Gold aggregations.',
+    };
+    el.innerHTML = '<span style="color:var(--muted);font-style:italic;font-size:10px">' + (msgs[layer]||'No tables yet.') + '</span>';
+    return;
+  }
+  const layerColors = {bronze:'#cd7f32', silver:'#a8a9ad', gold:'#ffd700'};
+  const col = layerColors[layer] || 'var(--blue)';
+  let html = '';
+  names.forEach(tbl => {
+    const info = tables[tbl];
+    const cols = info.columns || [];
+    const rowCount = info.rows || 0;
+    html += '<div style="margin-bottom:10px">';
+    html += '<div style="color:' + col + ';font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px" onclick="selectTable(\'' + escJs(tbl) + '\')">';
+    html += '&#9654; ' + escHtml(tbl);
+    html += '<span style="font-size:9px;background:rgba(255,255,255,0.1);padding:1px 5px;border-radius:4px;color:var(--silver)">' + rowCount + ' rows</span>';
+    html += '</div>';
+    const showCols = cols.filter(c => !c.startsWith('_')).slice(0, 8);
+    if (showCols.length) {
+      html += '<div style="color:var(--muted);padding-left:12px;font-size:9.5px;line-height:1.7;word-break:break-all">';
+      html += showCols.join(', ');
+      if (cols.filter(c=>!c.startsWith('_')).length > 8) html += ', &hellip;';
+      html += '</div>';
+    }
+    html += '</div>';
+  });
+  el.innerHTML = html;
+}
+
+function selectTable(tbl) {
+  document.getElementById('sql-input').value = 'SELECT * FROM "' + tbl + '" LIMIT 100;';
+}
+
+// Medallion preset queries
+let _lastBronzeTable = '';
+const _MEDALLION_PRESETS = {
+  bronze_preview: () => {
+    const firstBronze = _schemaCache && Object.keys(_schemaCache.bronze||{})[0];
+    const tbl = firstBronze || 'bronze_your_file_csv';
+    _lastBronzeTable = tbl;
+    return 'SELECT * FROM "' + tbl + '" LIMIT 50;';
+  },
+  silver_all:       () => 'SELECT * FROM silver LIMIT 100;',
+  silver_high_risk: () => "SELECT * FROM silver WHERE _sensitivity_tier IN ('critical','high') ORDER BY _sensitivity_tier, _source_file LIMIT 200;",
+  silver_people:    () => "SELECT * FROM silver WHERE _entity_type = 'person' ORDER BY name LIMIT 200;",
+  gold_affected:    () => 'SELECT * FROM gold_affected_people ORDER BY name;',
+  gold_summary:     () => 'SELECT * FROM gold_exposure_summary;',
+  gold_by_field:    () => 'SELECT * FROM gold_pii_by_field ORDER BY record_count DESC;',
+  gold_file_risk:   () => 'SELECT * FROM gold_file_risk ORDER BY sensitive_rows DESC;',
+};
+
+function setMedallionPreset(k) {
+  if (!_schemaCache) {
+    loadMedallionSchema();
+    setTimeout(() => { if (_MEDALLION_PRESETS[k]) document.getElementById('sql-input').value = _MEDALLION_PRESETS[k](); }, 600);
+  } else {
+    if (_MEDALLION_PRESETS[k]) document.getElementById('sql-input').value = _MEDALLION_PRESETS[k]();
+  }
+}
+
+// ── Field Configuration ──
+let _fieldConfig = { user_fields: [], presets: ['identity','financial','medical','credentials'], auto_discover: true };
+
+function loadFieldConfig() {
+  if (!_EID) return;
+  fetch('/engagements/' + _EID + '/field-config')
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      if (!cfg) return;
+      _fieldConfig = cfg;
+      // Apply presets
+      ['identity','financial','medical','credentials','network'].forEach(p => {
+        const el = document.querySelector('#preset-' + p + ' input');
+        if (el) el.checked = (_fieldConfig.presets || []).includes(p);
+        stylePresetLabel(document.getElementById('preset-' + p), el ? el.checked : false);
+      });
+      // Auto-discover
+      const ad = document.getElementById('auto-discover-toggle');
+      if (ad) ad.checked = _fieldConfig.auto_discover !== false;
+      // Custom fields
+      (_fieldConfig.user_fields || []).forEach(f => addCustomField(f));
+    })
+    .catch(() => {});
+}
+
+function stylePresetLabel(label, checked) {
+  if (!label) return;
+  if (checked) {
+    label.style.background = 'rgba(29,78,216,0.12)';
+    label.style.borderColor = 'var(--blue)';
+    label.style.color = 'var(--blue)';
+  } else {
+    label.style.background = '';
+    label.style.borderColor = 'var(--border)';
+    label.style.color = '';
+  }
+}
+
+function togglePreset(cb) {
+  stylePresetLabel(cb.closest('label'), cb.checked);
+}
+
+function addCustomField(data) {
+  data = data || {};
+  const tbody = document.getElementById('custom-fields-body');
+  if (!tbody) return;
+  const tr = document.createElement('tr');
+  const terms = Array.isArray(data.search_terms) ? data.search_terms.join(', ') : (data.search_terms || '');
+  tr.innerHTML = `
+    <td style="padding:5px 8px;border:1px solid var(--border)">
+      <input type="text" class="cf-name" value="${escHtml(data.name||'')}" placeholder="e.g. employee_id" style="width:100%;font-size:12px"/>
+    </td>
+    <td style="padding:5px 8px;border:1px solid var(--border)">
+      <input type="text" class="cf-terms" value="${escHtml(terms)}" placeholder="e.g. emp_id, staff_id" style="width:100%;font-size:12px"/>
+    </td>
+    <td style="padding:5px 8px;border:1px solid var(--border)">
+      <select class="cf-sens" style="font-size:12px">
+        <option value="medium" ${data.sensitivity==='medium'?'selected':''}>Medium</option>
+        <option value="high" ${data.sensitivity==='high'?'selected':''}>High</option>
+        <option value="critical" ${data.sensitivity==='critical'?'selected':''}>Critical</option>
+      </select>
+    </td>
+    <td style="padding:5px 8px;border:1px solid var(--border);text-align:center">
+      <button onclick="this.closest('tr').remove()" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:15px">&#10005;</button>
+    </td>
+  `;
+  tbody.appendChild(tr);
+}
+
+function saveFieldConfig() {
+  const presets = [];
+  ['identity','financial','medical','credentials','network'].forEach(p => {
+    const el = document.querySelector('#preset-' + p + ' input');
+    if (el && el.checked) presets.push(p);
+  });
+  const user_fields = [];
+  document.querySelectorAll('#custom-fields-body tr').forEach(tr => {
+    const name = tr.querySelector('.cf-name')?.value.trim();
+    const terms = tr.querySelector('.cf-terms')?.value.trim();
+    const sens = tr.querySelector('.cf-sens')?.value || 'medium';
+    if (name) {
+      user_fields.push({
+        name,
+        search_terms: terms ? terms.split(',').map(t => t.trim()).filter(Boolean) : [],
+        sensitivity: sens,
+      });
+    }
+  });
+  const auto_discover = document.getElementById('auto-discover-toggle')?.checked !== false;
+  const cfg = { user_fields, presets, auto_discover };
+  const status = document.getElementById('field-config-status');
+  fetch('/engagements/' + _EID + '/field-config', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg)
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      _fieldConfig = cfg;
+      if (status) { status.textContent = '✓ Saved'; setTimeout(() => { status.textContent = ''; }, 2000); }
+    }
+  }).catch(() => {
+    if (status) status.textContent = 'Save failed';
+  });
+}
+
+// Init on page load
+(function init() {
+  loadFieldConfig();
+  loadMedallionSchema();
+})();
+
 function runQuickSearch() {
   const q = document.getElementById('qs-text').value.trim();
   const tbl = document.getElementById('qs-table').value;
@@ -2625,9 +2931,9 @@ function copySQL() {
 
 function downloadCSV() {
   if (!_lastCols.length) return;
-  let csv = _lastCols.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',') + '\n';
+  let csv = _lastCols.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',') + '\\n';
   _lastRows.forEach(row => {
-    csv += row.map(c => '"' + String(c === null ? '' : c).replace(/"/g,'""') + '"').join(',') + '\n';
+    csv += row.map(c => '"' + String(c === null ? '' : c).replace(/"/g,'""') + '"').join(',') + '\\n';
   });
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
@@ -2764,6 +3070,7 @@ function formatSize(b) {
   return (b/1048576).toFixed(1) + ' MB';
 }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escJs(s) { return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 function fileIcon(name) {
   const e = (name.split('.').pop()||'').toLowerCase();
   const m = {pdf:'📄',docx:'📄',doc:'📄',txt:'📝',md:'📝',csv:'📊',xlsx:'📊',xls:'📊',
@@ -3146,16 +3453,20 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
 
     @app.get("/plugins")
     def plugins_page():
-        from vectrion.plugins.registry import load_plugin_config, _PLUGIN_META, load_custom_plugins
+        from vectrion.plugins.registry import (
+            load_plugin_config, _PLUGIN_META, load_custom_plugins, load_manifest_plugins
+        )
         cfg = load_plugin_config(workdir)
-        custom_plugins = load_custom_plugins(workdir)
+        legacy_plugins   = load_custom_plugins(workdir)
+        manifest_plugins = load_manifest_plugins(workdir)
+        all_custom = legacy_plugins + manifest_plugins
         return render_template_string(
             PLUGINS_TMPL,
             active_nav="plugins",
             page_title="Plugins",
             plugin_meta=_PLUGIN_META,
             plugin_cfg=cfg,
-            custom_plugins=custom_plugins,
+            custom_plugins=all_custom,
         )
 
     @app.post("/plugins/save")
@@ -3172,27 +3483,48 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
 
     @app.post("/plugins/upload")
     def plugins_upload():
+        import zipfile as _zipfile
+        import shutil as _shutil
         from werkzeug.utils import secure_filename
         uploaded = request.files.get("file")
         if not uploaded or not uploaded.filename:
             return redirect(url_for("plugins_page"))
         filename = secure_filename(uploaded.filename)
-        if not filename.endswith(".py"):
-            return redirect(url_for("plugins_page"))
         dest_dir = Path(workdir) / "custom_plugins"
         dest_dir.mkdir(parents=True, exist_ok=True)
-        uploaded.save(str(dest_dir / filename))
+
+        if filename.endswith(".py"):
+            # Legacy: save single Python file
+            uploaded.save(str(dest_dir / filename))
+        elif filename.endswith(".zip"):
+            # New: extract into a subdirectory named after the zip stem
+            stem = filename[:-4]
+            extract_dir = dest_dir / stem
+            extract_dir.mkdir(exist_ok=True)
+            tmp = dest_dir / filename
+            uploaded.save(str(tmp))
+            try:
+                with _zipfile.ZipFile(str(tmp), "r") as zf:
+                    zf.extractall(str(extract_dir))
+            finally:
+                tmp.unlink(missing_ok=True)
+        # Silently ignore other extensions
+
         return redirect(url_for("plugins_page"))
 
-    @app.post("/plugins/custom/<filename>/remove")
-    def plugins_custom_remove(filename: str):
+    @app.post("/plugins/custom/<name>/remove")
+    def plugins_custom_remove(name: str):
+        import shutil as _shutil
         from werkzeug.utils import secure_filename
-        safe = secure_filename(filename)
-        if not safe.endswith(".py"):
-            return redirect(url_for("plugins_page"))
-        target = Path(workdir) / "custom_plugins" / safe
-        if target.exists():
-            target.unlink()
+        safe = secure_filename(name)
+        base = Path(workdir) / "custom_plugins"
+        # Try as a .py file first (legacy), then as a directory (manifest plugin)
+        file_target = base / (safe if safe.endswith(".py") else safe + ".py")
+        dir_target  = base / safe
+        if file_target.exists() and file_target.is_file():
+            file_target.unlink()
+        elif dir_target.exists() and dir_target.is_dir():
+            _shutil.rmtree(str(dir_target))
         return redirect(url_for("plugins_page"))
 
     @app.get("/plugins/sdk-template")
@@ -3204,6 +3536,21 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         return send_file(
             str(template_path), mimetype="text/x-python",
             as_attachment=True, download_name="custom_scanner_template.py",
+        )
+
+    @app.get("/plugins/sdk/<language>")
+    def plugins_sdk_language(language: str):
+        from flask import send_file
+        from vectrion.plugins.sdk_templates import get_sdk_zip
+        try:
+            buf = get_sdk_zip(language)
+        except ValueError:
+            return f"No SDK template for language: {language!r}", 404
+        return send_file(
+            buf,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"vectrion_sdk_{language}.zip",
         )
 
     @app.get("/engagements/new")
@@ -3327,7 +3674,7 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         current = s.get("current_layer")
         if current:
             vault_dir = _upload_dir(workdir, engagement_id)
-            ctx = {**s, "workdir": str(workdir)}
+            ctx = {**s, "workdir": str(workdir), "field_config": s.get("field_config", {})}
             updated = run_layer(
                 s.get("runbook", {}), current, dd, Path(workdir) / "exports",
                 vault_dir=vault_dir,
@@ -3511,6 +3858,43 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         storage.save_state_obj(engagement_id, s)
         return app.response_class(response=json.dumps({"ok": True, "aliases": aliases}), mimetype="application/json")
 
+    # ── FIELD CONFIG ──────────────────────────────────────────────────────────
+    @app.get("/engagements/<engagement_id>/field-config")
+    def field_config_get(engagement_id: str):
+        s = storage.load_state_obj(engagement_id)
+        default = {
+            "user_fields": [],
+            "presets": ["identity", "financial", "medical", "credentials"],
+            "auto_discover": True,
+        }
+        cfg = (s or {}).get("field_config", default)
+        return app.response_class(
+            response=json.dumps(cfg), mimetype="application/json"
+        )
+
+    @app.post("/engagements/<engagement_id>/field-config")
+    def field_config_save(engagement_id: str):
+        s = storage.load_state_obj(engagement_id)
+        if not s:
+            return app.response_class(
+                response=json.dumps({"error": "Engagement not found"}),
+                mimetype="application/json", status=404,
+            )
+        s["field_config"] = request.get_json(force=True, silent=True) or {}
+        storage.save_state_obj(engagement_id, s)
+        return app.response_class(
+            response=json.dumps({"ok": True}), mimetype="application/json"
+        )
+
+    # ── MEDALLION SCHEMA ───────────────────────────────────────────────────────
+    @app.get("/engagements/<engagement_id>/schema")
+    def engagement_schema(engagement_id: str):
+        from vectrion.analysis_db import get_db_path, get_full_schema
+        db_path = get_db_path(str(workdir), engagement_id)
+        return app.response_class(
+            response=json.dumps(get_full_schema(db_path)), mimetype="application/json"
+        )
+
     # ── STAGE RE-RUN ──────────────────────────────────────────────────────────
     @app.post("/engagements/<engagement_id>/rerun/<stage>")
     def engagement_rerun(engagement_id: str, stage: str):
@@ -3580,8 +3964,13 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             )
         rb = s.get("runbook", {})
         try:
-            aliases = s.get("table_aliases", {})
-            conn = _build_sqlite_db(rb, aliases)
+            from vectrion.analysis_db import get_db_path, open_db
+            db_path = get_db_path(str(workdir), engagement_id)
+            conn = open_db(db_path)
+            if conn is None:
+                # Legacy fallback: build in-memory DB from runbook state
+                aliases = s.get("table_aliases", {})
+                conn = _build_sqlite_db(rb, aliases)
             cur = conn.execute(sql)
             columns = [d[0] for d in (cur.description or [])]
             rows = [list(r) for r in cur.fetchall()]
