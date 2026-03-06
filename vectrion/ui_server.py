@@ -3907,6 +3907,7 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             if s:
                 rb = s.get("runbook", {})
                 # Aggregate pii_summary to counts only — avoid sending full record list
+                evidence_files = rb.get("evidence_files", [])
                 pii_raw = rb.get("pii_summary", [])
                 pii_counts: dict[str, int] = {}
                 if isinstance(pii_raw, list):
@@ -3915,15 +3916,34 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
                         pii_counts[k] = pii_counts.get(k, 0) + 1
                 elif isinstance(pii_raw, dict):
                     pii_counts = {k: len(v) if isinstance(v, list) else v for k, v in pii_raw.items()}
+                # Per-file PII summary from extracted records
+                per_file: dict[str, dict] = {}
+                for rec in rb.get("extracted", []):
+                    fname = rec.get("source_file", "unknown")
+                    if fname not in per_file:
+                        per_file[fname] = {"records": 0, "pii_types": set()}
+                    per_file[fname]["records"] += 1
+                    for pt in (rec.get("pii_types") or []):
+                        per_file[fname]["pii_types"].add(pt)
+                per_file_summary = {
+                    fn: {"records": v["records"], "pii_types": sorted(v["pii_types"])}
+                    for fn, v in per_file.items()
+                }
                 incident_context = {
                     "incident_id": incident_id,
                     "stage": s.get("stage"),
+                    "current_layer": s.get("current_layer"),
+                    "completed_layers": s.get("completed_layers", []),
                     "incident": rb.get("incident", {}),
                     "pii_counts_by_type": pii_counts,
                     "affected_people_count": len(rb.get("affected_people", [])),
-                    "files_ingested": len(s.get("vault_files", [])),
+                    "files_ingested": len(evidence_files),
+                    "files": [
+                        {"name": ef.get("original_name", ""), "type": ef.get("type_label", ""), "method": ef.get("method", "")}
+                        for ef in evidence_files
+                    ],
+                    "per_file_pii": per_file_summary,
                     "current_stage_name": rb.get("current_stage_name"),
-                    "completed_stages": rb.get("completed_stages", []),
                 }
         return app.response_class(
             response=json.dumps(chat(body.get("message", ""), incident_context)),

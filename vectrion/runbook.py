@@ -7,7 +7,9 @@ real ingested data.  Falls back to static demo data when no vault files exist.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
+import re
 from pathlib import Path
 
 from vectrion.config_store import get_stage_name, get_stage_order
@@ -23,6 +25,39 @@ from vectrion.redaction import redact_text
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _make_person_key(ssn: str = "", email: str = "", name: str = "",
+                     dob: str = "", phone: str = "") -> str | None:
+    """
+    Deterministic 16-char hex key for a person.  Used for cross-file dedup.
+    Priority anchor: SSN > email > name+DOB > name+phone > name alone.
+    Returns None when there is no identity signal at all.
+    """
+    def _norm_ssn(v):   return re.sub(r"[^0-9]", "", v or "")
+    def _norm_email(v): return (v or "").lower().strip()
+    def _norm_name(v):  return re.sub(r"\s+", " ", (v or "").lower().strip())
+    def _norm_phone(v): return re.sub(r"[^0-9]", "", v or "")
+
+    ssn_d   = _norm_ssn(ssn)
+    email_d = _norm_email(email)
+    name_d  = _norm_name(name)
+    dob_d   = (dob or "").strip()
+    phone_d = _norm_phone(phone)
+
+    if len(ssn_d) >= 9:
+        raw = f"ssn:{ssn_d}"
+    elif "@" in email_d:
+        raw = f"email:{email_d}"
+    elif name_d and dob_d:
+        raw = f"name_dob:{name_d}|{dob_d}"
+    elif name_d and len(phone_d) >= 10:
+        raw = f"name_phone:{name_d}|{phone_d}"
+    elif name_d:
+        raw = f"name:{name_d}"
+    else:
+        return None
+
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 def _load_csv(path: Path) -> list[dict]:
     with path.open("r", encoding="utf-8") as f:
@@ -256,6 +291,16 @@ def run_layer(
             except Exception:
                 pass
 
+        # Build source_file → file_id (sha256) lookup from evidence_files
+        _file_id_map: dict[str, str] = {}
+        for ef in state.get("evidence_files", []):
+            orig = ef.get("original_name", "")
+            sha  = ef.get("sha256", "")
+            if orig and sha:
+                _file_id_map[orig] = sha
+                # also index by basename of path in case source_file uses it
+                _file_id_map[Path(ef.get("path", orig)).name] = sha
+
         extractor = DeterministicExtractor()
         extracted_rows = []
         pii_summary = []
@@ -272,6 +317,17 @@ def run_layer(
             ex["pii_hits"] = [h.__dict__ for h in hits]
             ex["pii_tiers"] = classify_hits(hits)
             pii_summary.extend(ex["pii_hits"])
+            # Stamp file_id (sha256 of source file) for traceability
+            src = ex.get("source_file", "")
+            ex["file_id"] = _file_id_map.get(src) or _file_id_map.get(Path(src).name, "")
+            # Stamp person_key for cross-file deduplication
+            ex["person_key"] = _make_person_key(
+                ssn=ex.get("ssn", ""),
+                email=ex.get("email", ""),
+                name=ex.get("name", ""),
+                dob=ex.get("dob", ""),
+                phone=ex.get("phone", ""),
+            )
             extracted_rows.append(ex)
 
         state["extracted"] = extracted_rows
