@@ -542,7 +542,9 @@ _TOPBAR = """<div class="topbar">
     const msg=inp.value.trim();if(!msg)return;inp.value='';
     addMsg('user',msg);showTyping();
     const iid=document.body.dataset.incidentId||'';
-    const payload={message:msg};if(iid)payload.incident_id=iid;
+    // send last 12 messages as history (excludes the just-added user msg)
+    const history=gH().slice(-13,-1).map(function(m){return{role:m.role,text:m.text};});
+    const payload={message:msg,history:history};if(iid)payload.incident_id=iid;
     fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       .then(function(r){return r.json();})
       .then(function(d){hideTyping();addMsg('bot',d.reply||'No response.');})
@@ -2503,28 +2505,6 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
   <!-- TAB: DATA TABLES -->
   <div class="tab-pane" id="tab-tables">
 
-    <!-- Vectorian inline chat -->
-    <div style="background:linear-gradient(135deg,var(--navy-2),var(--navy-3));border:1px solid var(--navy-4);border-radius:12px;margin-bottom:18px;overflow:hidden">
-      <div style="padding:11px 18px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,0.07)">
-        <div style="width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--blue-light),var(--blue));display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;flex-shrink:0">&#9670;</div>
-        <div>
-          <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--silver-2)">Vectorian AI</div>
-          <div style="font-size:10px;color:var(--muted)">Ask about the data — I can write SQL queries for you</div>
-        </div>
-        <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
-          <div style="width:7px;height:7px;border-radius:50%;background:var(--success)"></div>
-          <span style="font-size:10px;color:var(--muted)">Online</span>
-        </div>
-      </div>
-      <div id="dt-chat-msgs" style="max-height:180px;overflow-y:auto;padding:12px 18px;display:flex;flex-direction:column;gap:8px">
-        <div class="dt-bot-msg" style="align-self:flex-start;background:rgba(255,255,255,0.07);border-radius:10px;padding:8px 12px;font-size:12px;color:#e2e8f0;max-width:90%;line-height:1.55">Hello, Operator. I can help you query this engagement's data. Ask me to find specific records, explain what's in the tables, or write a SQL query — e.g. <em>"Show me all affected people with SSNs"</em> or <em>"How many records are in the Silver table?"</em></div>
-      </div>
-      <div style="padding:10px 14px;display:flex;gap:8px;border-top:1px solid rgba(255,255,255,0.07)">
-        <input id="dt-chat-input" type="text" placeholder="Ask Vectorian about this data..." style="flex:1;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);color:#fff;border-radius:7px;padding:8px 12px;font-size:13px;font-family:inherit" onkeydown="if(event.key==='Enter')dtChatSend()"/>
-        <button type="button" onclick="dtChatSend()" style="background:var(--blue);border:none;color:#fff;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">&#9658; Ask</button>
-      </div>
-    </div>
-
     <div style="display:grid;grid-template-columns:260px 1fr;gap:18px;align-items:flex-start">
 
       <!-- ── Left sidebar: Medallion Schema Browser ── -->
@@ -3945,8 +3925,9 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
                     "per_file_pii": per_file_summary,
                     "current_stage_name": rb.get("current_stage_name"),
                 }
+        history = body.get("history", [])
         return app.response_class(
-            response=json.dumps(chat(body.get("message", ""), incident_context)),
+            response=json.dumps(chat(body.get("message", ""), incident_context, history)),
             mimetype="application/json",
         )
 

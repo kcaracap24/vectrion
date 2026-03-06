@@ -109,7 +109,8 @@ def _get_api_key() -> str:
     return key
 
 
-def chat(message: str, incident_context: dict[str, Any] | None = None) -> dict:
+def chat(message: str, incident_context: dict[str, Any] | None = None,
+         history: list[dict] | None = None) -> dict:
     """Returns {reply: str, actions: list}."""
     api_key = _get_api_key()
     if not api_key:
@@ -123,18 +124,29 @@ def chat(message: str, incident_context: dict[str, Any] | None = None) -> dict:
 
         client = OpenAI(api_key=api_key)
 
-        user_content = message
+        messages: list[dict] = [{"role": "system", "content": _SYSTEM_PROMPT}]
+
+        # Inject incident context as a system message so it's always available
         if incident_context:
             ctx_json = json.dumps(incident_context, indent=2)
-            user_content = f"[Incident context]\n{ctx_json}\n\n[Operator question]\n{message}"
+            messages.append({
+                "role": "system",
+                "content": f"[Current incident context — use this to answer questions about files, PII, stages, etc.]\n{ctx_json}",
+            })
+
+        # Replay conversation history so the model has full context for follow-ups
+        for turn in (history or []):
+            role = "user" if turn.get("role") == "user" else "assistant"
+            text = (turn.get("text") or "").strip()
+            if text:
+                messages.append({"role": role, "content": text})
+
+        messages.append({"role": "user", "content": message})
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             max_tokens=600,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
+            messages=messages,
         )
         raw = response.choices[0].message.content
         reply, actions = _parse_actions(raw)
