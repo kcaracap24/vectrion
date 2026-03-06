@@ -3901,7 +3901,30 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         from vectrion.chat import chat
         body = request.get_json(force=True)
         incident_id = body.get("incident_id")
-        incident_context = storage.load_state_obj(incident_id) if incident_id else None
+        incident_context = None
+        if incident_id:
+            s = storage.load_state_obj(incident_id)
+            if s:
+                rb = s.get("runbook", {})
+                # Aggregate pii_summary to counts only — avoid sending full record list
+                pii_raw = rb.get("pii_summary", [])
+                pii_counts: dict[str, int] = {}
+                if isinstance(pii_raw, list):
+                    for item in pii_raw:
+                        k = item.get("kind", "unknown") if isinstance(item, dict) else "unknown"
+                        pii_counts[k] = pii_counts.get(k, 0) + 1
+                elif isinstance(pii_raw, dict):
+                    pii_counts = {k: len(v) if isinstance(v, list) else v for k, v in pii_raw.items()}
+                incident_context = {
+                    "incident_id": incident_id,
+                    "stage": s.get("stage"),
+                    "incident": rb.get("incident", {}),
+                    "pii_counts_by_type": pii_counts,
+                    "affected_people_count": len(rb.get("affected_people", [])),
+                    "files_ingested": len(s.get("vault_files", [])),
+                    "current_stage_name": rb.get("current_stage_name"),
+                    "completed_stages": rb.get("completed_stages", []),
+                }
         return app.response_class(
             response=json.dumps(chat(body.get("message", ""), incident_context)),
             mimetype="application/json",
