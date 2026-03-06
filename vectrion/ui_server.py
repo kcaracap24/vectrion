@@ -2503,12 +2503,25 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
   <!-- TAB: DATA TABLES -->
   <div class="tab-pane" id="tab-tables">
 
-    <!-- Search context banner -->
-    <div style="background:linear-gradient(135deg,var(--navy-2),var(--navy-3));border:1px solid var(--navy-4);border-radius:12px;padding:18px 22px;margin-bottom:18px;display:flex;gap:14px;align-items:flex-start">
-      <div style="font-size:26px;line-height:1">&#128269;</div>
-      <div style="flex:1">
-        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--silver-2);margin-bottom:6px">Search Context — What are you looking for?</div>
-        <textarea id="search-context" rows="2" placeholder="Describe your search goal — e.g. 'Find all patients with SSNs who were affected by the breach and live in California'" style="width:100%;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);color:#fff;border-radius:7px;padding:9px 13px;font-size:13px;font-family:inherit;resize:none;line-height:1.55"></textarea>
+    <!-- Vectorian inline chat -->
+    <div style="background:linear-gradient(135deg,var(--navy-2),var(--navy-3));border:1px solid var(--navy-4);border-radius:12px;margin-bottom:18px;overflow:hidden">
+      <div style="padding:11px 18px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,0.07)">
+        <div style="width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--blue-light),var(--blue));display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;flex-shrink:0">&#9670;</div>
+        <div>
+          <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--silver-2)">Vectorian AI</div>
+          <div style="font-size:10px;color:var(--muted)">Ask about the data — I can write SQL queries for you</div>
+        </div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+          <div style="width:7px;height:7px;border-radius:50%;background:var(--success)"></div>
+          <span style="font-size:10px;color:var(--muted)">Online</span>
+        </div>
+      </div>
+      <div id="dt-chat-msgs" style="max-height:180px;overflow-y:auto;padding:12px 18px;display:flex;flex-direction:column;gap:8px">
+        <div class="dt-bot-msg" style="align-self:flex-start;background:rgba(255,255,255,0.07);border-radius:10px;padding:8px 12px;font-size:12px;color:#e2e8f0;max-width:90%;line-height:1.55">Hello, Operator. I can help you query this engagement's data. Ask me to find specific records, explain what's in the tables, or write a SQL query — e.g. <em>"Show me all affected people with SSNs"</em> or <em>"How many records are in the Silver table?"</em></div>
+      </div>
+      <div style="padding:10px 14px;display:flex;gap:8px;border-top:1px solid rgba(255,255,255,0.07)">
+        <input id="dt-chat-input" type="text" placeholder="Ask Vectorian about this data..." style="flex:1;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.14);color:#fff;border-radius:7px;padding:8px 12px;font-size:13px;font-family:inherit" onkeydown="if(event.key==='Enter')dtChatSend()"/>
+        <button type="button" onclick="dtChatSend()" style="background:var(--blue);border:none;color:#fff;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">&#9658; Ask</button>
       </div>
     </div>
 
@@ -2607,7 +2620,7 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
               <input type="text" id="query-note" placeholder="e.g. Identifying records with SSNs to assess notification scope..."/>
             </div>
             <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-              <button class="btn btn-primary" onclick="runSqlQuery()">&#9654;&nbsp; Run Query</button>
+              <button class="btn btn-primary" id="run-query-btn" onclick="runSqlQuery()">&#9654;&nbsp; Run Query</button>
               <button class="btn btn-secondary" id="csv-btn" onclick="downloadCSV()" style="display:none">&#11015; Export CSV</button>
               <span id="query-status" style="font-size:12px;color:var(--muted)"></span>
             </div>
@@ -3090,6 +3103,73 @@ function formatSize(b) {
 }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function escJs(s) { return encodeURIComponent(String(s)); }
+function dtChatSend() {
+  var inp = document.getElementById('dt-chat-input');
+  var msg = inp.value.trim(); if (!msg) return; inp.value = '';
+  var box = document.getElementById('dt-chat-msgs');
+  var eid = document.body.dataset.incidentId || '';
+  var ud = document.createElement('div');
+  ud.style.cssText = 'text-align:right;margin-bottom:8px';
+  ud.innerHTML = '<span style="display:inline-block;background:var(--blue);color:#fff;border-radius:10px 10px 2px 10px;padding:6px 12px;font-size:13px;max-width:85%">' + escHtml(msg) + '</span>';
+  box.appendChild(ud);
+  var tid = document.createElement('div');
+  tid.id = 'dt-typing'; tid.style.cssText = 'margin-bottom:8px;color:var(--muted);font-size:12px;font-style:italic';
+  tid.textContent = 'Vectorian is thinking...';
+  box.appendChild(tid); box.scrollTop = box.scrollHeight;
+  var payload = {message: msg}; if (eid) payload.incident_id = eid;
+  fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
+    .then(function(r){return r.json();})
+    .then(function(d) {
+      var t = document.getElementById('dt-typing'); if (t) t.remove();
+      var reply = d.reply || 'No response.';
+      var bd = document.createElement('div');
+      bd.style.cssText = 'margin-bottom:10px';
+      // split on ```sql ... ``` blocks; capturing group gives code at odd indices
+      var parts = reply.split(/```(?:sql)?\\n?([\\s\\S]*?)```/gi);
+      var innerHtml = '';
+      var lastSql = '';
+      for (var i = 0; i < parts.length; i++) {
+        if (i % 2 === 0) {
+          innerHtml += '<span style="white-space:pre-wrap">' + escHtml(parts[i]) + '</span>';
+        } else {
+          var cleanCode = parts[i].trim();
+          lastSql = cleanCode;
+          innerHtml += '<pre style="background:rgba(0,0,0,0.3);border-radius:6px;padding:8px 10px;font-size:11px;overflow-x:auto;white-space:pre-wrap;margin:6px 0">' + escHtml(cleanCode) + '</pre>';
+        }
+      }
+      if (lastSql) {
+        innerHtml += '<button type="button" class="dt-use-query" style="font-size:11px;padding:3px 9px;background:var(--blue);color:#fff;border:none;border-radius:5px;cursor:pointer;margin-top:4px">&#9654; Use this query</button>';
+        bd.dataset.sql = lastSql;
+      }
+      bd.innerHTML = '<div style="display:flex;align-items:flex-start;gap:8px">' +
+        '<div style="width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--blue-light),var(--blue));display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-top:1px">&#9670;</div>' +
+        '<div style="background:rgba(255,255,255,0.07);border-radius:2px 10px 10px 10px;padding:8px 12px;font-size:13px;color:rgba(255,255,255,0.9);max-width:90%;line-height:1.5">' + innerHtml + '</div></div>';
+      if (lastSql) bd.dataset.sql = lastSql;
+      box.appendChild(bd); box.scrollTop = box.scrollHeight;
+    })
+    .catch(function() {
+      var t = document.getElementById('dt-typing'); if (t) t.remove();
+      var bd = document.createElement('div'); bd.style.cssText = 'margin-bottom:8px;color:var(--red);font-size:12px';
+      bd.textContent = 'Unable to reach Vectorian AI.';
+      box.appendChild(bd); box.scrollTop = box.scrollHeight;
+    });
+}
+function dtAutoSql(el) {
+  while (el && !el.dataset.sql) el = el.parentElement;
+  var sql = el ? el.dataset.sql : '';
+  if (!sql) return;
+  var editor = document.getElementById('sql-editor');
+  if (editor) editor.value = sql;
+  switchTab('tables');
+  setTimeout(function() {
+    var runBtn = document.getElementById('run-query-btn');
+    if (runBtn) runBtn.click();
+  }, 150);
+}
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('.dt-use-query');
+  if (btn) dtAutoSql(btn);
+});
 function fileIcon(name) {
   const e = (name.split('.').pop()||'').toLowerCase();
   const m = {pdf:'📄',docx:'📄',doc:'📄',txt:'📝',md:'📝',csv:'📊',xlsx:'📊',xls:'📊',
