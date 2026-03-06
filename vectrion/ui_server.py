@@ -843,7 +843,29 @@ NEW_ENG_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <!-- STEP 1: Client Profile -->
     <div class="step-section active" id="step-1">
       <div class="card">
-        <div class="card-header"><div class="card-title">&#127970; Client Profile</div></div>
+        <div class="card-header">
+          <div class="card-title">&#127970; Client Profile</div>
+          <div style="margin-left:auto;font-size:11px;color:var(--muted)">* Required fields</div>
+        </div>
+
+        <!-- Engagement ID — first thing to fill in -->
+        <div style="background:var(--blue-pale);border:1px solid rgba(29,78,216,0.22);border-radius:9px;padding:16px 18px;margin-bottom:22px">
+          <div class="form-row form-row-2" style="margin-bottom:0">
+            <div class="form-group" style="margin-bottom:0">
+              <label style="color:var(--blue)">Engagement ID *</label>
+              <input type="text" name="engagement_id" id="eng-id-input" value="{{ suggested_id }}" required
+                style="font-family:monospace;font-size:15px;font-weight:700;letter-spacing:1px"/>
+              <div class="input-hint">Auto-generated — edit as needed</div>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label style="color:var(--blue)">Preview</label>
+              <div style="padding:9px 14px;background:var(--navy);border-radius:7px;font-family:monospace;font-size:15px;color:#fff;letter-spacing:2px;font-weight:700;margin-top:5px">
+                <span id="id-preview">{{ suggested_id }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="form-row form-row-2">
           <div class="form-group">
             <label>Company / Organization Name *</label>
@@ -1036,21 +1058,6 @@ NEW_ENG_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
             <div class="radio-group" style="margin-top:8px">
               <label class="radio-item"><input type="radio" name="privilege" value="Yes"/> Yes</label>
               <label class="radio-item"><input type="radio" name="privilege" value="No" checked/> No</label>
-            </div>
-          </div>
-        </div>
-        <div class="divider"></div>
-        <div class="section-title">&#9670; Engagement ID</div>
-        <div class="form-row form-row-2">
-          <div class="form-group">
-            <label>Engagement ID *</label>
-            <input type="text" name="engagement_id" id="eng-id-input" value="{{ suggested_id }}" required/>
-            <div class="input-hint">Auto-generated from your format config — edit as needed</div>
-          </div>
-          <div class="form-group">
-            <label>Preview</label>
-            <div style="padding:9px 14px;background:var(--navy);border-radius:7px;font-family:monospace;font-size:15px;color:#fff;letter-spacing:2px;font-weight:700">
-              <span id="id-preview">{{ suggested_id }}</span>
             </div>
           </div>
         </div>
