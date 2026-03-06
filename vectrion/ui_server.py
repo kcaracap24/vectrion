@@ -360,7 +360,7 @@ pre{
 .btn-enter:hover{background:#1a44c4;box-shadow:0 6px 32px rgba(29,78,216,0.65);transform:translateY(-2px);}
 
 /* ── TABS ── */
-.tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:22px;}
+.tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:22px;position:sticky;top:58px;z-index:100;background:var(--bg);}
 .tab-btn{
   padding:11px 24px;font-size:13px;font-weight:600;color:var(--muted);
   border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;
@@ -1704,19 +1704,19 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
   </div>
 
   <!-- Tab bar -->
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">&#9776;&nbsp; Overview</button>
-    <button class="tab-btn" data-tab="vault" onclick="switchTab('vault')">&#128274;&nbsp; Data Vault
+  <div class="tab-bar" id="main-tab-bar">
+    <button type="button" class="tab-btn{% if not vault_files and not completed %}" data-tab="overview"{% else %} active" data-tab="overview"{% endif %}>&#9776;&nbsp; Overview</button>
+    <button type="button" class="tab-btn{% if not vault_files and not completed %} active{% endif %}" data-tab="vault">&#128274;&nbsp; Data Vault
       {% if vault_files %}<span style="margin-left:6px;background:var(--blue);color:#fff;border-radius:999px;font-size:10px;padding:1px 7px;font-weight:700">{{ vault_files|length }}</span>{% endif %}
     </button>
-    <button class="tab-btn" data-tab="runbook" onclick="switchTab('runbook')">&#128200;&nbsp; Analysis
+    <button type="button" class="tab-btn" data-tab="runbook">&#128200;&nbsp; Analysis
       {% if completed %}<span style="margin-left:6px;background:var(--success);color:#fff;border-radius:999px;font-size:10px;padding:1px 7px;font-weight:700">{{ completed|length }}</span>{% endif %}
     </button>
-    <button class="tab-btn" data-tab="tables" onclick="switchTab('tables')">&#128202;&nbsp; Data Tables</button>
+    <button type="button" class="tab-btn" data-tab="tables">&#128202;&nbsp; Data Tables</button>
   </div>
 
   <!-- TAB: OVERVIEW -->
-  <div class="tab-pane active" id="tab-overview">
+  <div class="tab-pane{% if vault_files or completed %} active{% endif %}" id="tab-overview">
     <div class="card">
       <div class="card-header">
         <div class="card-title">&#9776; Stage Progress</div>
@@ -1766,7 +1766,7 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
         {% if vault_files|length == 0 and all_stages and current_layer == all_stages[0].id %}
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
           <button class="btn btn-primary" type="button" disabled style="opacity:0.4;cursor:not-allowed">&#9658;&nbsp; Run Stage {{ current_layer }}</button>
-          <div style="font-size:12px;color:var(--muted)">&#9888;&nbsp; <a href="#" onclick="switchTab('vault');return false;" style="color:var(--blue)">Upload files to the Data Vault</a> first</div>
+          <div style="font-size:12px;color:var(--muted)">&#9888;&nbsp; <button type="button" onclick="switchTab('vault')" style="background:none;border:none;padding:0;color:var(--blue);cursor:pointer;font-size:12px;text-decoration:underline">Upload files to the Data Vault</button> first</div>
         </div>
         {% else %}
         <form method="post" action="/engagements/{{ engagement_id }}/proceed">
@@ -1822,7 +1822,7 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
   </div>
 
   <!-- TAB: DATA VAULT -->
-  <div class="tab-pane" id="tab-vault">
+  <div class="tab-pane{% if not vault_files and not completed %} active{% endif %}" id="tab-vault">
     <!-- Security row -->
     <div class="security-row">
       <div class="sec-badge"><div class="sec-badge-icon">&#128274;</div>SHA-256 Chain of Custody</div>
@@ -2627,9 +2627,21 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
 <script>
 // ── Tabs ──
 function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  document.querySelectorAll('#main-tab-bar .tab-btn').forEach(function(b) {
+    if (b.dataset.tab === name) b.classList.add('active');
+    else b.classList.remove('active');
+  });
+  document.querySelectorAll('.tab-pane').forEach(function(p) {
+    if (p.id === 'tab-' + name) p.classList.add('active');
+    else p.classList.remove('active');
+  });
+  window.scrollTo(0, 0);
 }
+// Attach tab clicks via event delegation (avoids inline onclick issues)
+document.getElementById('main-tab-bar').addEventListener('click', function(e) {
+  var btn = e.target.closest('[data-tab]');
+  if (btn) switchTab(btn.dataset.tab);
+});
 
 // ── SQL Table Viewer ──
 const _EID = document.body.dataset.incidentId || '';
@@ -2758,7 +2770,7 @@ function renderLayerPanel(layer, tables) {
     const cols = info.columns || [];
     const rowCount = info.rows || 0;
     html += '<div style="margin-bottom:10px">';
-    html += '<div style="color:' + col + ';font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px" onclick="selectTable(\'' + escJs(tbl) + '\')">';
+    html += '<div style="color:' + col + ';font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px" data-tbl="' + escHtml(tbl) + '" onclick="selectTable(this.dataset.tbl)">';
     html += '&#9654; ' + escHtml(tbl);
     html += '<span style="font-size:9px;background:rgba(255,255,255,0.1);padding:1px 5px;border-radius:4px;color:var(--silver)">' + rowCount + ' rows</span>';
     html += '</div>';
@@ -3077,7 +3089,7 @@ function formatSize(b) {
   return (b/1048576).toFixed(1) + ' MB';
 }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function escJs(s) { return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
+function escJs(s) { return encodeURIComponent(String(s)); }
 function fileIcon(name) {
   const e = (name.split('.').pop()||'').toLowerCase();
   const m = {pdf:'📄',docx:'📄',doc:'📄',txt:'📝',md:'📝',csv:'📊',xlsx:'📊',xls:'📊',
