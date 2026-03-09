@@ -40,6 +40,7 @@ from vectrion.detectors import detect_pii
 _JSON_MAX_BYTES    = 256 * 1024 * 1024   # 256 MB raw file size cap
 _JSON_MAX_FIELDS   = 500                  # max keys per dict row
 _JSON_MAX_DEPTH    = 10                   # max nesting depth
+_MAX_FIELD_VALUE_LEN = 10_000            # max characters per field value
 
 
 def _safe_json_loads(text: str) -> Any:
@@ -167,7 +168,7 @@ def _map_row(row: dict, source_file: str, row_num: int, source_type: str = "stru
             continue
         nk = _norm_key(k)
         mapped = _FIELD_MAP.get(nk, nk)
-        val = str(v).strip()
+        val = str(v).strip()[:_MAX_FIELD_VALUE_LEN]
 
         if mapped == "password":
             rec[mapped] = _mask_password(val)
@@ -453,7 +454,7 @@ def _raw_rows_from_csv(path: Path) -> list[dict]:
         for i, row in enumerate(reader):
             if i >= 50_000:
                 break
-            rows.append(dict(row))
+            rows.append({k: (v[:_MAX_FIELD_VALUE_LEN] if v else v) for k, v in row.items()})
     return rows
 
 
@@ -517,7 +518,7 @@ def _raw_rows_from_xlsx(path: Path) -> list[dict]:
                 if all(c is None for c in row):
                     continue
                 row_dict = {
-                    headers[i]: ("" if row[i] is None else str(row[i]).strip())
+                    headers[i]: ("" if row[i] is None else str(row[i]).strip()[:_MAX_FIELD_VALUE_LEN])
                     for i in range(min(len(headers), len(row)))
                 }
                 rows.append(row_dict)
@@ -551,7 +552,7 @@ def _raw_rows_from_xml(path: Path) -> list[dict]:
             row: dict[str, str] = dict(elem.attrib)
             for child in elem:
                 ct = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-                row[ct] = child.text or ""
+                row[ct] = (child.text or "")[:_MAX_FIELD_VALUE_LEN]
             rows.append(row)
             if len(rows) >= 50_000:
                 break

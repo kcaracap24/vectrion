@@ -68,23 +68,29 @@ def _manifest(paths: list[Path]) -> list[dict[str, str]]:
     return [{"path": str(p), "sha256": file_sha256(p)} for p in paths if p.exists()]
 
 
+def _h(value: object) -> str:
+    """HTML-escape a value for safe insertion into HTML documents."""
+    import html as _html
+    return _html.escape(str(value) if value is not None else "", quote=True)
+
+
 def _review_pack_html(pack: dict) -> str:
     tl = "".join(
-        f"<tr><td>{r.get('timestamp','')}</td><td>{r.get('event','')}</td></tr>"
+        f"<tr><td>{_h(r.get('timestamp',''))}</td><td>{_h(r.get('event',''))}</td></tr>"
         for r in pack.get("timeline", [])
     )
     ids = "".join(
-        f"<tr><td>{r.get('event_id','')}</td><td>{r.get('score','')}</td>"
-        f"<td>{r.get('explain','')}</td></tr>"
+        f"<tr><td>{_h(r.get('event_id',''))}</td><td>{_h(r.get('score',''))}</td>"
+        f"<td>{_h(r.get('explain',''))}</td></tr>"
         for r in pack.get("identity_scores", [])
     )
     cls_rows = "".join(
-        f"<tr><td>{tier}</td><td>{count}</td></tr>"
+        f"<tr><td>{_h(tier)}</td><td>{_h(count)}</td></tr>"
         for tier, count in pack.get("sensitivity_classification", {}).items()
     )
     aff = "".join(
-        f"<tr><td>{p.get('name','')}</td><td>{p.get('email','')}</td>"
-        f"<td>{p.get('confidence','')}</td></tr>"
+        f"<tr><td>{_h(p.get('name',''))}</td><td>{_h(p.get('email',''))}</td>"
+        f"<td>{_h(p.get('confidence',''))}</td></tr>"
         for p in pack.get("affected_people", [])
     )
     return f"""<!doctype html>

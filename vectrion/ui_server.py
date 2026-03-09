@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import sqlite3
 from pathlib import Path
 from urllib.parse import quote as _url_quote, unquote as _url_unquote
@@ -467,7 +468,7 @@ pre{
 .lang-ruby   {background:#4c1130;color:#f9a8d4;}
 .lang-rust   {background:#431407;color:#fdba74;}
 .lang-unknown{background:var(--navy-3);color:var(--silver);}
-</style>"""
+</style><meta name="csrf-token" content="{{ csrf_token }}">"""
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TOPBAR
@@ -553,6 +554,32 @@ _TOPBAR = """<div class="topbar">
   document.addEventListener('keydown',function(e){
     if(e.key==='Enter'&&document.activeElement===document.getElementById('vc-input'))vcSend();
   });
+})();
+// ── CSRF: auto-inject token into HTML forms and patch fetch() ──────────────
+(function(){
+  var ct=(document.querySelector('meta[name=csrf-token]')||{}).content||'';
+  if(!ct)return;
+  function injectForms(){
+    document.querySelectorAll('form').forEach(function(f){
+      if(f.method&&f.method.toLowerCase()==='post'&&!f.querySelector('[name=csrf_token]')){
+        var inp=document.createElement('input');
+        inp.type='hidden';inp.name='csrf_token';inp.value=ct;
+        f.appendChild(inp);
+      }
+    });
+  }
+  document.addEventListener('DOMContentLoaded',injectForms);
+  injectForms();
+  var _origFetch=window.fetch;
+  window.fetch=function(url,opts){
+    opts=opts||{};
+    var m=(opts.method||'GET').toUpperCase();
+    if(m==='POST'||m==='PUT'||m==='PATCH'||m==='DELETE'){
+      opts.headers=Object.assign({},opts.headers||{});
+      opts.headers['X-CSRF-Token']=ct;
+    }
+    return _origFetch.call(this,url,opts);
+  };
 })();
 </script>"""
 
@@ -3298,6 +3325,38 @@ def _save_upload_index(workdir: str, engagement_id: str, records: list) -> None:
     idx.write_text(json.dumps(records, indent=2))
 
 
+def _append_upload_index(workdir: str, engagement_id: str, record: dict) -> None:
+    """Atomically append one record to the upload index using a file lock.
+
+    Replaces the read-modify-write pattern that could lose records under
+    concurrent uploads.  Falls back to direct write if fcntl is unavailable
+    (Windows).
+    """
+    idx = _upload_dir(workdir, engagement_id) / "_index.json"
+    lock = idx.with_suffix(".lock")
+    try:
+        import fcntl
+        with lock.open("w") as lf:
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            try:
+                records = json.loads(idx.read_text()) if idx.exists() else []
+            except Exception:
+                records = []
+            records.append(record)
+            idx.write_text(json.dumps(records, indent=2))
+            fcntl.flock(lf, fcntl.LOCK_UN)
+    except ImportError:
+        # fcntl not available (Windows) — fall back to non-atomic write
+        records = _load_upload_index(workdir, engagement_id)
+        records.append(record)
+        _save_upload_index(workdir, engagement_id, records)
+    finally:
+        try:
+            lock.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 def _size_label(b: int) -> str:
     if b < 1024:
         return f"{b} B"
@@ -3464,6 +3523,28 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
     app.jinja_env.filters["urlencode"] = lambda v: _url_quote(str(v), safe="")
     storage = Storage(Path(workdir))
     dd = Path(data_dir) if data_dir else Path(__file__).resolve().parent / "data"
+
+    # ── CSRF protection ───────────────────────────────────────────────────────
+    _csrf_token = secrets.token_urlsafe(32)
+    app.jinja_env.globals["csrf_token"] = _csrf_token
+
+    @app.before_request
+    def _csrf_protect():
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return None
+        token = (
+            request.headers.get("X-CSRF-Token")
+            or request.form.get("csrf_token")
+        )
+        if not token or not secrets.compare_digest(token, _csrf_token):
+            return (
+                app.response_class(
+                    response=json.dumps({"error": "CSRF validation failed"}),
+                    mimetype="application/json",
+                    status=403,
+                )
+            )
+        return None
 
     @app.get("/")
     def home():
@@ -3875,10 +3956,8 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             "proc_error":    result["error"],
         }
 
-        # Append to index
-        records = _load_upload_index(workdir, engagement_id)
-        records.append(record)
-        _save_upload_index(workdir, engagement_id, records)
+        # Atomically append to index (file-locked to prevent concurrent upload data loss)
+        _append_upload_index(workdir, engagement_id, record)
 
         storage.audit(engagement_id, "file_ingested", {
             "filename": safe_name,
