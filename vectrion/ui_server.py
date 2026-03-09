@@ -3432,15 +3432,22 @@ def _build_sqlite_db(runbook: dict, aliases: dict | None = None) -> sqlite3.Conn
             ),
         )
 
-    # Create alias views so queries can use configured table names
+    # Create alias views so queries can use configured table names.
+    # Both base and alias are validated to contain only safe identifier chars
+    # before being interpolated into SQL to prevent DDL injection.
+    import re as _re
+    _SAFE_IDENT = _re.compile(r'^[A-Za-z_][A-Za-z0-9_ ]{0,63}$')
     if aliases:
         for base, alias in aliases.items():
             alias = (alias or "").strip()
-            if alias and alias != base:
-                try:
-                    conn.execute(f'CREATE VIEW IF NOT EXISTS "{alias}" AS SELECT * FROM "{base}"')
-                except Exception:
-                    pass
+            if not alias or alias == base:
+                continue
+            if not _SAFE_IDENT.match(base) or not _SAFE_IDENT.match(alias):
+                continue  # silently skip unsafe identifiers
+            try:
+                conn.execute(f'CREATE VIEW IF NOT EXISTS "{alias}" AS SELECT * FROM "{base}"')
+            except Exception:
+                pass
 
     conn.commit()
     return conn
@@ -3608,7 +3615,19 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             uploaded.save(str(tmp))
             try:
                 with _zipfile.ZipFile(str(tmp), "r") as zf:
+                    # Validate every member path stays within extract_dir
+                    extract_abs = extract_dir.resolve()
+                    for member in zf.namelist():
+                        member_path = (extract_abs / member).resolve()
+                        if not str(member_path).startswith(str(extract_abs) + "/") \
+                                and member_path != extract_abs:
+                            raise ValueError(f"Unsafe path in archive: {member!r}")
                     zf.extractall(str(extract_dir))
+            except (ValueError, _zipfile.BadZipFile) as exc:
+                extract_dir.rmdir() if extract_dir.exists() and not any(extract_dir.iterdir()) else None
+                import logging
+                logging.getLogger("vectrion").warning("Rejected unsafe ZIP upload: %s", exc)
+                return redirect(url_for("plugins_page"))
             finally:
                 tmp.unlink(missing_ok=True)
         # Silently ignore other extensions
@@ -4094,6 +4113,19 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         return redirect(url_for("home"))
 
     # ── SQL QUERY ─────────────────────────────────────────────────────────────
+    def _is_select_only(sql: str) -> bool:
+        """Return True only if sql is a single SELECT/WITH/EXPLAIN statement."""
+        import re as _re
+        stripped = sql.strip().rstrip(";").strip()
+        # Strip leading block comments /* ... */ and line comments --
+        stripped = _re.sub(r'/\*.*?\*/', ' ', stripped, flags=_re.DOTALL)
+        stripped = _re.sub(r'--[^\n]*', ' ', stripped).strip()
+        # Reject multiple statements (semicolon within the query)
+        if ";" in stripped:
+            return False
+        first_token = stripped.split()[0].upper() if stripped.split() else ""
+        return first_token in ("SELECT", "WITH", "EXPLAIN", "VALUES")
+
     @app.post("/engagements/<engagement_id>/query")
     def engagement_query(engagement_id: str):
         s = storage.load_state_obj(engagement_id)
@@ -4109,13 +4141,18 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
                 response=json.dumps({"columns": [], "rows": [], "error": "No SQL provided"}),
                 mimetype="application/json", status=400,
             )
+        if not _is_select_only(sql):
+            return app.response_class(
+                response=json.dumps({"columns": [], "rows": [],
+                                     "error": "Only SELECT queries are permitted."}),
+                mimetype="application/json", status=403,
+            )
         rb = s.get("runbook", {})
         try:
             from vectrion.analysis_db import get_db_path, open_db
             db_path = get_db_path(str(workdir), engagement_id)
             conn = open_db(db_path)
             if conn is None:
-                # Legacy fallback: build in-memory DB from runbook state
                 aliases = s.get("table_aliases", {})
                 conn = _build_sqlite_db(rb, aliases)
             cur = conn.execute(sql)
@@ -4127,8 +4164,10 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
                 mimetype="application/json",
             )
         except Exception as exc:
+            import logging
+            logging.getLogger("vectrion").warning("Query error for %s: %s", engagement_id, exc)
             return app.response_class(
-                response=json.dumps({"columns": [], "rows": [], "error": str(exc)}),
+                response=json.dumps({"columns": [], "rows": [], "error": "Query failed — check syntax and table names."}),
                 mimetype="application/json",
             )
 
