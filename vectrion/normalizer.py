@@ -35,6 +35,51 @@ from typing import Any
 
 from vectrion.detectors import detect_pii
 
+# ── JSON deserialization safety limits ────────────────────────────────────────
+# Prevent memory exhaustion from malicious uploaded files.
+_JSON_MAX_BYTES    = 256 * 1024 * 1024   # 256 MB raw file size cap
+_JSON_MAX_FIELDS   = 500                  # max keys per dict row
+_JSON_MAX_DEPTH    = 10                   # max nesting depth
+
+
+def _safe_json_loads(text: str) -> Any:
+    """json.loads with field count and nesting-depth guard to prevent memory exhaustion."""
+    # Pre-parse depth check via character scan — fast, no allocation
+    nesting = 0
+    in_str = False
+    escape = False
+    for ch in text:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_str:
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch in ("{", "["):
+            nesting += 1
+            if nesting > _JSON_MAX_DEPTH:
+                raise ValueError(
+                    f"JSON nesting depth exceeds {_JSON_MAX_DEPTH} — "
+                    "file may be malformed or malicious."
+                )
+        elif ch in ("}", "]"):
+            nesting -= 1
+
+    def _obj_hook(pairs: list) -> dict:
+        if len(pairs) > _JSON_MAX_FIELDS:
+            raise ValueError(
+                f"JSON object exceeds {_JSON_MAX_FIELDS} fields — "
+                "file may be malformed or malicious."
+            )
+        return dict(pairs)
+
+    return json.loads(text, object_pairs_hook=_obj_hook)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # FIELD NAME AUTO-MAPPING
 # ─────────────────────────────────────────────────────────────────────────────
@@ -191,6 +236,9 @@ def _records_from_csv(path: Path, source_name: str) -> list[dict]:
 def _records_from_json(path: Path, source_name: str) -> list[dict]:
     records: list[dict] = []
     try:
+        # Cap file size before reading into memory
+        if path.stat().st_size > _JSON_MAX_BYTES:
+            return records
         content = path.read_text(encoding="utf-8", errors="replace")
         if path.suffix.lower() == ".jsonl":
             rows = []
@@ -198,11 +246,11 @@ def _records_from_json(path: Path, source_name: str) -> list[dict]:
                 ln = ln.strip()
                 if ln:
                     try:
-                        rows.append(json.loads(ln))
+                        rows.append(_safe_json_loads(ln))
                     except Exception:
                         pass
         else:
-            obj = json.loads(content)
+            obj = _safe_json_loads(content)
             if isinstance(obj, list):
                 rows = obj
             elif isinstance(obj, dict):
@@ -413,19 +461,21 @@ def _raw_rows_from_json(path: Path) -> list[dict]:
     """Return raw row dicts from JSON/JSONL without any field mapping."""
     rows: list[dict] = []
     try:
+        if path.stat().st_size > _JSON_MAX_BYTES:
+            return rows
         content = path.read_text(encoding="utf-8", errors="replace")
         if path.suffix.lower() == ".jsonl":
             for ln in content.splitlines():
                 ln = ln.strip()
                 if ln:
                     try:
-                        obj = json.loads(ln)
+                        obj = _safe_json_loads(ln)
                         if isinstance(obj, dict):
                             rows.append(obj)
                     except Exception:
                         pass
         else:
-            obj = json.loads(content)
+            obj = _safe_json_loads(content)
             if isinstance(obj, list):
                 raw = obj
             elif isinstance(obj, dict):

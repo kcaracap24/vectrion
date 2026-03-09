@@ -102,8 +102,19 @@ def _parse_actions(text: str) -> tuple[str, list[dict]]:
 def _get_api_key() -> str:
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
+        key_file = Path.home() / ".openai_apikey"
         try:
-            key = (Path.home() / ".openai_apikey").read_text(encoding="utf-8").strip()
+            # Warn if the key file is readable by group or others (mode & 0o077 != 0)
+            import stat as _stat
+            mode = key_file.stat().st_mode
+            if mode & _stat.S_IRWXG or mode & _stat.S_IRWXO:
+                import logging
+                logging.getLogger("vectrion").warning(
+                    "~/.openai_apikey is readable by group/others (mode %s). "
+                    "Run: chmod 600 ~/.openai_apikey",
+                    oct(mode & 0o777),
+                )
+            key = key_file.read_text(encoding="utf-8").strip()
         except Exception:
             pass
     return key

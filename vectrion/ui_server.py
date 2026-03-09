@@ -1384,20 +1384,21 @@ details.api-details .api-body{padding:10px 0 4px;}
     <details class="api-details">
       <summary>{{ p.api_key_label }} configuration</summary>
       <div class="api-body">
+        {% if has_key %}
+        <div style="margin-bottom:8px;font-size:11px;color:var(--success)">&#10003; API key configured — enter a new value below to replace it</div>
+        {% endif %}
         <form method="post" action="/plugins/save" style="display:flex;gap:8px;align-items:center">
           <input type="hidden" name="plugin_id" value="{{ p.id }}"/>
           {% if is_on %}<input type="hidden" name="enabled" value="on"/>{% endif %}
-          <input type="text" name="api_key" value="{{ has_key }}"
-            placeholder="Paste API key here…"
+          <input type="password" name="api_key" value=""
+            placeholder="{{ '••••••••' + has_key[-4:] if has_key else 'Paste API key here…' }}"
+            autocomplete="new-password"
             style="flex:1;font-family:monospace;font-size:12px;padding:6px 10px"/>
           <button type="submit" class="btn btn-primary btn-sm">Save</button>
         </form>
         <div class="input-hint" style="margin-top:6px">
           Get your key at <a href="{{ p.api_key_url }}" target="_blank" rel="noopener" class="plain">{{ p.api_key_url }}</a>
         </div>
-        {% if has_key %}
-        <div style="margin-top:6px;font-size:11px;color:var(--success)">&#10003; API key configured ({{ has_key[:4] }}…)</div>
-        {% endif %}
       </div>
     </details>
   </div>
@@ -3586,8 +3587,11 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         plugin_id = request.form.get("plugin_id", "")
         if plugin_id and plugin_id in cfg:
             cfg[plugin_id]["enabled"] = bool(request.form.get("enabled"))
-            if "api_key" in request.form:
-                cfg[plugin_id]["api_key"] = request.form.get("api_key", "").strip()
+            # Only update stored key when a non-empty value is submitted —
+            # blank submission (form opened but not changed) leaves key intact
+            new_key = request.form.get("api_key", "").strip()
+            if new_key:
+                cfg[plugin_id]["api_key"] = new_key
             save_plugin_config(workdir, cfg)
         return redirect(url_for("plugins_page"))
 
