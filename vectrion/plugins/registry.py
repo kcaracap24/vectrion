@@ -11,6 +11,72 @@ from pathlib import Path
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Manifest plugin helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_subprocess_scanner(plugin_dir: Path, manifest: dict):
+    """Return a scanner class that delegates scan_vault to a subprocess."""
+    from vectrion.plugins.runner import run_plugin
+
+    class SubprocessScanner:
+        display_name = manifest.get("name", plugin_dir.name)
+
+        def scan_file(self, path, label=None) -> list[dict]:
+            return []  # directory plugins use scan_vault only
+
+        def scan_vault(self, vault_dir, vault_index) -> dict:
+            return run_plugin(plugin_dir, manifest, vault_dir, vault_index)
+
+    return SubprocessScanner
+
+
+def load_manifest_plugins(workdir) -> list[dict]:
+    """Discover directory-based plugins with plugin.json manifests.
+
+    Returns a list of dicts with keys:
+        id        — str  — e.g. "custom-my-scanner-dir"
+        name      — str  — manifest "name" or dirname
+        dirname   — str  — e.g. "my-scanner-dir"
+        language  — str  — manifest "language" or "unknown"
+        cls       — type | None  — subprocess scanner class (None on error)
+        error     — str | None  — error message if loading failed
+        manifest  — dict | None — parsed plugin.json content
+    """
+    results: list[dict] = []
+    plugin_dir = Path(workdir) / "custom_plugins"
+    if not plugin_dir.exists():
+        return results
+
+    for sub in sorted(plugin_dir.iterdir()):
+        if not sub.is_dir():
+            continue
+        entry: dict = {
+            "id":       f"custom-{sub.name}",
+            "name":     sub.name,
+            "dirname":  sub.name,
+            "language": "unknown",
+            "cls":      None,
+            "error":    None,
+            "manifest": None,
+        }
+        manifest_path = sub / "plugin.json"
+        if not manifest_path.exists():
+            entry["error"] = "Missing plugin.json"
+            results.append(entry)
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            entry["name"]     = manifest.get("name", sub.name)
+            entry["language"] = manifest.get("language", "unknown")
+            entry["manifest"] = manifest
+            entry["cls"]      = _make_subprocess_scanner(sub, manifest)
+        except Exception as exc:
+            entry["error"] = str(exc)
+        results.append(entry)
+    return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Plugin metadata catalogue
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -102,6 +168,7 @@ def load_custom_plugins(workdir) -> list[dict]:
         id        — str  — e.g. "custom-my_scanner"
         name      — str  — display_name class attr, or filename stem
         filename  — str  — e.g. "my_scanner.py"
+        language  — str  — always "python" for .py plugins
         cls       — type | None  — the scanner class (None on load error)
         error     — str | None  — error message if loading failed
     """
@@ -115,6 +182,7 @@ def load_custom_plugins(workdir) -> list[dict]:
             "id":       f"custom-{py_file.stem}",
             "name":     py_file.stem,
             "filename": py_file.name,
+            "language": "python",
             "cls":      None,
             "error":    None,
         }
@@ -162,6 +230,9 @@ def _get_scanner_map(workdir=None) -> dict[str, type]:
     result = dict(_SCANNER_MAP)
     if workdir:
         for entry in load_custom_plugins(workdir):
+            if entry.get("cls"):
+                result[entry["id"]] = entry["cls"]
+        for entry in load_manifest_plugins(workdir):
             if entry.get("cls"):
                 result[entry["id"]] = entry["cls"]
     return result
