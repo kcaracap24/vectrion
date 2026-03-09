@@ -403,55 +403,98 @@ def run_layer(
 
     # ── Stage D — Entity Resolution & Record Consolidation ───────────────────
     elif letter == "D":
-        incident_identity = {
-            "name":  incident.get("reporter_name", ""),
-            "email": incident.get("reporter_email", ""),
-            "phone": incident.get("reporter_phone", ""),
-        }
-        scores = []
-        affected_people: list[dict] = []
-        seen_emails: set[str] = set()
+        # ── Group records by person_key ───────────────────────────────────────
+        # person_key was stamped during Stage B extraction.
+        # Records without a key (no identity signal) are kept as singletons.
+        _TIER_ORDER = {"PHI/PII": 0, "PII": 1, "PHI": 2, "PCI": 3, "Financial": 4,
+                       "Credentials": 5, "Other": 99}
+
+        groups: dict[str, list[dict]] = {}   # person_key → [records]
+        no_key_records: list[dict] = []
 
         for row in extracted:
-            row_identity = {
-                "name":  row.get("name", ""),
-                "email": row.get("email", ""),
-                "phone": row.get("phone", ""),
-            }
-            explain = explain_identity_match(incident_identity, row_identity)
-            score = explain["score"]
-            scores.append({
-                "event_id":   row.get("event_id") or row.get("record_id", ""),
-                "score":      score,
-                "confidence": explain["confidence"],
-                "factors":    explain["factors"],
-                "explain":    explain["summary"],
+            pk = row.get("person_key") or _make_person_key(
+                ssn=row.get("ssn", ""), email=row.get("email", ""),
+                name=row.get("name", ""), dob=row.get("dob", ""),
+                phone=row.get("phone", ""),
+            )
+            if pk:
+                groups.setdefault(pk, []).append(row)
+            else:
+                no_key_records.append(row)
+
+        # ── Merge each group into a single canonical person record ────────────
+        def _best(vals):
+            """Return first non-empty value from a list."""
+            return next((v for v in vals if v), "")
+
+        affected_people: list[dict] = []
+
+        for pk, recs in groups.items():
+            src_files = list(dict.fromkeys(r.get("source_file", "") for r in recs if r.get("source_file")))
+            file_ids  = list(dict.fromkeys(r.get("file_id", "")    for r in recs if r.get("file_id")))
+            pii_types = sorted({pt for r in recs for pt in (r.get("pii_types") or [])})
+            tiers     = [r.get("sensitivity_tier", "Other") for r in recs]
+            best_tier = min(tiers, key=lambda t: _TIER_ORDER.get(t, 99))
+            affected_people.append({
+                "person_key":    pk,
+                "record_id":     _best([r.get("event_id") or r.get("record_id", "") for r in recs]),
+                "name":          _best([r.get("name", "") for r in recs]),
+                "email":         _best([r.get("email", "") for r in recs]),
+                "phone":         _best([r.get("phone", "") for r in recs]),
+                "ssn":           "[PRESENT]" if any(r.get("ssn") for r in recs) else "",
+                "dob":           "[PRESENT]" if any(r.get("dob") for r in recs) else "",
+                "mrn":           "[PRESENT]" if any(r.get("mrn") for r in recs) else "",
+                "cc":            "[PRESENT]" if any(r.get("cc") for r in recs) else "",
+                "account":       "[PRESENT]" if any(r.get("account") for r in recs) else "",
+                "source_files":  src_files,
+                "file_ids":      file_ids,
+                "record_count":  len(recs),
+                "cross_file":    len(src_files) > 1,
+                "pii_types":     pii_types,
+                "sensitivity_tier": best_tier,
+                "confidence":    "high" if any(r.get("ssn") for r in recs) else
+                                 "medium" if any(r.get("email") for r in recs) else "low",
             })
-            # Any record with a real email or SSN counts as an affected person
-            has_id = bool(row.get("email") or row.get("ssn") or row.get("phone"))
-            email_key = (row.get("email") or "").lower()
-            if has_id and email_key not in seen_emails:
-                if email_key:
-                    seen_emails.add(email_key)
+
+        # Singletons: records with no identity anchor (keep them, mark unknown)
+        for row in no_key_records:
+            has_id = bool(row.get("email") or row.get("ssn") or row.get("phone") or row.get("name"))
+            if has_id:
                 affected_people.append({
-                    "record_id":  row.get("event_id") or row.get("record_id", ""),
-                    "name":       row.get("name", ""),
-                    "email":      row.get("email", ""),
-                    "phone":      row.get("phone", ""),
-                    "ssn":        "[PRESENT]" if row.get("ssn") else "",
-                    "dob":        "[PRESENT]" if row.get("dob") else "",
-                    "mrn":        "[PRESENT]" if row.get("mrn") else "",
-                    "source":     row.get("source_file", ""),
-                    "confidence": explain["confidence"],
+                    "person_key":    None,
+                    "record_id":     row.get("event_id") or row.get("record_id", ""),
+                    "name":          row.get("name", ""),
+                    "email":         row.get("email", ""),
+                    "phone":         row.get("phone", ""),
+                    "ssn":           "[PRESENT]" if row.get("ssn") else "",
+                    "dob":           "[PRESENT]" if row.get("dob") else "",
+                    "mrn":           "[PRESENT]" if row.get("mrn") else "",
+                    "cc":            "[PRESENT]" if row.get("cc") else "",
+                    "account":       "[PRESENT]" if row.get("account") else "",
+                    "source_files":  [row.get("source_file", "")],
+                    "file_ids":      [row.get("file_id", "")],
+                    "record_count":  1,
+                    "cross_file":    False,
+                    "pii_types":     list(row.get("pii_types") or []),
+                    "sensitivity_tier": row.get("sensitivity_tier", "Other"),
+                    "confidence":    "low",
                 })
 
-        state["identity_scores"] = scores
+        cross_file_count = sum(1 for p in affected_people if p.get("cross_file"))
+        duplicate_records = sum(p["record_count"] - 1 for p in affected_people if p.get("person_key"))
+
         state["affected_people"] = affected_people
         state["entity_resolution"] = {
-            "total_records":         len(extracted),
+            "total_records":          len(extracted),
             "unique_affected_people": len(affected_people),
-            "dedup_emails":          len(seen_emails),
+            "cross_file_matches":     cross_file_count,
+            "duplicate_records_merged": duplicate_records,
+            "records_without_identity": len(no_key_records),
+            "dedup_method":           "person_key",
         }
+        # Keep identity_scores for backward compat (summary only, not per-record)
+        state["identity_scores"] = []
 
         # ── Gold write (with affected_people populated) ───────────────────────
         if engagement_id:

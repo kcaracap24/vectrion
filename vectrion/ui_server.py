@@ -2282,7 +2282,7 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
         </div>
       </div>
       {% if rb_entity_resolution %}
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px">
         <div class="stat-card">
           <div class="stat-num">{{ rb_entity_resolution.get("total_records","—") }}</div>
           <div class="stat-label">Total Records</div>
@@ -2292,15 +2292,23 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
           <div class="stat-label">Unique Individuals</div>
         </div>
         <div class="stat-card">
-          <div class="stat-num">{{ rb_entity_resolution.get("dedup_emails","—") }}</div>
-          <div class="stat-label">Deduplicated by Email</div>
+          <div class="stat-num" style="color:var(--warning)">{{ rb_entity_resolution.get("duplicate_records_merged","—") }}</div>
+          <div class="stat-label">Duplicate Records Merged</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-num" style="color:var(--blue)">{{ rb_entity_resolution.get("cross_file_matches","—") }}</div>
+          <div class="stat-label">Cross-File Matches</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px">
+        Dedup method: <strong>person_key</strong> &nbsp;·&nbsp;
+        {{ rb_entity_resolution.get("records_without_identity",0) }} records had no identity anchor
       </div>
       {% endif %}
       {% if rb_affected %}
       <div style="overflow-x:auto">
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>SSN</th><th>DOB</th><th>MRN</th><th>Source</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>SSN</th><th>DOB</th><th>CC</th><th>MRN</th><th>Files</th><th>Records</th><th>Confidence</th></tr></thead>
         <tbody>
         {% for p in rb_affected %}
         <tr>
@@ -2308,9 +2316,16 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
           <td style="font-family:monospace;font-size:12px">{{ p.email or "—" }}</td>
           <td style="text-align:center">{{ "&#9888;" if p.ssn else "—" }}</td>
           <td style="text-align:center">{{ "&#10003;" if p.dob else "—" }}</td>
+          <td style="text-align:center">{{ "&#9888;" if p.cc else "—" }}</td>
           <td style="text-align:center">{{ "&#10003;" if p.mrn else "—" }}</td>
-          <td style="font-size:11px;color:var(--muted)">{{ p.source or "—" }}</td>
-          <td>{% if p.record_id %}<a href="/engagements/{{ engagement_id }}/discovery/{{ p.record_id | urlencode }}" target="_blank" style="font-size:12px;white-space:nowrap">&#128269; Source</a>{% endif %}</td>
+          <td style="font-size:11px;color:var(--muted)">
+            {{ p.source_files | join(", ") if p.source_files else (p.get("source","") or "—") }}
+            {% if p.cross_file %}<span class="badge badge-blue" style="font-size:10px;margin-left:4px">cross-file</span>{% endif %}
+          </td>
+          <td style="text-align:center;font-size:12px">{{ p.record_count or 1 }}</td>
+          <td style="font-size:11px">
+            <span class="badge {% if p.confidence == 'high' %}badge-red{% elif p.confidence == 'medium' %}badge-yellow{% else %}badge-muted{% endif %}">{{ p.confidence or "—" }}</span>
+          </td>
         </tr>
         {% endfor %}
         </tbody>
@@ -2699,7 +2714,8 @@ const _PRESETS = {
   financial: () => `SELECT record_id, source_file, name, email, has_cc, has_account, has_routing\nFROM "${getAlias('records')}"\nWHERE has_cc = 1 OR has_account = 1\nORDER BY name;`,
   pii_type: () => `SELECT kind, COUNT(*) AS count, ROUND(AVG(confidence), 2) AS avg_conf\nFROM "${getAlias('pii_detections')}"\nGROUP BY kind\nORDER BY count DESC;`,
   regulatory: () => `SELECT law, triggered, deadline, filing_required, notes\nFROM "${getAlias('regulatory_triggers')}";`,
-  all_people: () => `SELECT record_id, name, email, phone, has_ssn, has_dob, has_mrn, source, confidence\nFROM "${getAlias('affected_people')}"\nORDER BY name;`,
+  all_people: () => `SELECT person_key, name, email, phone, has_ssn, has_dob, has_cc, source_files, record_count, cross_file, confidence\nFROM "${getAlias('affected_people')}"\nORDER BY name;`,
+  cross_file: () => `SELECT person_key, name, email, source_files, record_count\nFROM "${getAlias('affected_people')}"\nWHERE cross_file = 1\nORDER BY record_count DESC;`,
   crossref: () => `SELECT r.name, r.email, r.has_ssn, r.has_mrn, r.sensitivity_tier,\n       p.kind, p.confidence\nFROM "${getAlias('records')}" r\nJOIN "${getAlias('pii_detections')}" p ON r.record_id = p.record_id\nORDER BY r.name;`,
 };
 
@@ -3358,19 +3374,27 @@ def _build_sqlite_db(runbook: dict, aliases: dict | None = None) -> sqlite3.Conn
 
     # ── affected_people ───────────────────────────────────────────────────────
     c.execute("""CREATE TABLE affected_people (
-        record_id TEXT, name TEXT, email TEXT, phone TEXT,
-        has_ssn INTEGER, has_dob INTEGER, has_mrn INTEGER,
-        source TEXT, confidence TEXT
+        person_key TEXT, record_id TEXT, name TEXT, email TEXT, phone TEXT,
+        has_ssn INTEGER, has_dob INTEGER, has_mrn INTEGER, has_cc INTEGER,
+        source_files TEXT, record_count INTEGER, cross_file INTEGER,
+        sensitivity_tier TEXT, confidence TEXT
     )""")
     for p in runbook.get("affected_people", []):
+        src_files = p.get("source_files") or [p.get("source", "")]
         c.execute(
-            "INSERT INTO affected_people VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO affected_people VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
+                p.get("person_key") or "",
                 p.get("record_id", ""), p.get("name", ""), p.get("email", ""), p.get("phone", ""),
                 _sensitive_bool(p.get("ssn")),
                 _sensitive_bool(p.get("dob")),
                 _sensitive_bool(p.get("mrn")),
-                p.get("source", ""), str(p.get("confidence", "")),
+                _sensitive_bool(p.get("cc")),
+                ", ".join(src_files),
+                p.get("record_count", 1),
+                1 if p.get("cross_file") else 0,
+                p.get("sensitivity_tier", ""),
+                str(p.get("confidence", "")),
             ),
         )
 
