@@ -31,6 +31,10 @@ ocr = [
   "beautifulsoup4>=4.12",
   "opencv-python>=4.8",
 ]
+cloud = [
+  "boto3>=1.34",
+  "cryptography>=42.0",
+]
 
 [project.scripts]
 vectrion = "vectrion.cli:main"

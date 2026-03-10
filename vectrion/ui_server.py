@@ -1232,6 +1232,82 @@ CONFIG_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
       </table>
     </div>
 
+    <!-- Cloud Storage -->
+    <div class="card">
+      <div class="card-header">
+        <div style="width:34px;height:34px;background:var(--navy);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;">&#9729;</div>
+        <div>
+          <div class="card-title" style="border:none;padding:0;margin:0">&#9729; Cloud Storage (Optional)</div>
+          <div class="muted" style="font-size:12px;margin-top:1px">Store encrypted evidence files in S3-compatible object storage (AWS S3, Cloudflare R2, MinIO, DigitalOcean Spaces)</div>
+        </div>
+      </div>
+
+      <!-- Key warning -->
+      <div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:12px;color:#92400E;display:flex;align-items:flex-start;gap:8px">
+        <span style="font-size:16px;flex-shrink:0">&#9888;</span>
+        <span>Back up <code style="background:#FDE68A;padding:1px 5px;border-radius:3px;font-family:monospace">vault_key.bin</code> from your workdir — without it, cloud-encrypted files cannot be decrypted. A new key is auto-generated on first use.</span>
+      </div>
+
+      <!-- Storage mode -->
+      <div style="margin-bottom:20px">
+        <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted);margin-bottom:10px;display:block">Storage Mode</label>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:2px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all 0.12s" id="mode-label-local_only">
+            <input type="radio" name="cloud_mode" value="local_only" onchange="cloudModeChange(this)" {{ 'checked' if cloud_cfg.mode == 'local_only' or not cloud_cfg.enabled }} style="width:auto;margin:0">
+            &#128196; Local Only
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:2px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all 0.12s" id="mode-label-mirror">
+            <input type="radio" name="cloud_mode" value="mirror" onchange="cloudModeChange(this)" {{ 'checked' if cloud_cfg.enabled and cloud_cfg.mode == 'mirror' }} style="width:auto;margin:0">
+            &#128260; Mirror
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:2px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all 0.12s" id="mode-label-cloud_only">
+            <input type="radio" name="cloud_mode" value="cloud_only" onchange="cloudModeChange(this)" {{ 'checked' if cloud_cfg.enabled and cloud_cfg.mode == 'cloud_only' }} style="width:auto;margin:0">
+            &#9729; Cloud Only
+          </label>
+        </div>
+        <div style="margin-top:8px;font-size:12px;color:var(--muted)" id="cloud-mode-desc">
+          <span id="desc-local_only">Files stored locally only — no cloud interaction.</span>
+          <span id="desc-mirror" style="display:none">Local file kept <em>and</em> an AES-256 encrypted copy uploaded to cloud.</span>
+          <span id="desc-cloud_only" style="display:none">AES-256 encrypted copy uploaded; local raw file deleted after upload. Files are restored on-demand for processing.</span>
+        </div>
+      </div>
+
+      <!-- Cloud fields (shown when mode != local_only) -->
+      <div id="cloud-fields" style="{{ '' if (cloud_cfg.enabled and cloud_cfg.mode != 'local_only') else 'display:none' }}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div>
+            <label>Endpoint URL</label>
+            <input type="text" name="cloud_endpoint_url" value="{{ cloud_cfg.endpoint_url }}" placeholder="Leave blank for AWS S3, or e.g. https://xxx.r2.cloudflarestorage.com"/>
+            <div class="muted" style="font-size:11px;margin-top:3px">Blank = AWS S3. Set for R2, MinIO, Spaces, etc.</div>
+          </div>
+          <div>
+            <label>Bucket Name</label>
+            <input type="text" name="cloud_bucket" value="{{ cloud_cfg.bucket }}" placeholder="my-breach-vault"/>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+          <div>
+            <label>Access Key ID</label>
+            <input type="text" name="cloud_access_key" value="{{ cloud_cfg.access_key }}" placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off"/>
+          </div>
+          <div>
+            <label>Secret Access Key</label>
+            <input type="password" name="cloud_secret_key" value="" placeholder="Leave blank to keep existing" autocomplete="new-password"/>
+            {% if cloud_cfg.secret_key %}<div class="muted" style="font-size:11px;margin-top:3px">&#10003; Key saved — blank = keep existing</div>{% endif %}
+          </div>
+          <div>
+            <label>Region</label>
+            <input type="text" name="cloud_region" value="{{ cloud_cfg.region or 'us-east-1' }}" placeholder="us-east-1"/>
+          </div>
+        </div>
+        <!-- Test connection -->
+        <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="testCloudConnection()">&#128268; Test Connection</button>
+          <span id="cloud-test-result" style="font-size:13px"></span>
+        </div>
+      </div>
+    </div>
+
     <div style="display:flex;gap:12px;margin-bottom:40px">
       <button type="submit" class="btn btn-primary">&#10003;&nbsp; Save Configuration</button>
       <a href="/" class="btn btn-secondary">Discard Changes</a>
@@ -1241,6 +1317,41 @@ CONFIG_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
 </div>
 <script>
 var cc={{ custom_count }};
+// Cloud vault mode UI
+function cloudModeChange(radio) {
+  var mode = radio.value;
+  var showFields = (mode !== 'local_only');
+  document.getElementById('cloud-fields').style.display = showFields ? '' : 'none';
+  ['local_only','mirror','cloud_only'].forEach(function(m){
+    var lbl = document.getElementById('desc-'+m);
+    if(lbl) lbl.style.display = (m===mode) ? '' : 'none';
+  });
+}
+// Init desc visibility on load
+(function(){
+  var radios = document.querySelectorAll('[name=cloud_mode]');
+  for(var i=0;i<radios.length;i++){if(radios[i].checked){cloudModeChange(radios[i]);break;}}
+})();
+function testCloudConnection(){
+  var resultEl = document.getElementById('cloud-test-result');
+  resultEl.textContent = 'Testing...';
+  resultEl.style.color = 'var(--muted)';
+  var payload = new URLSearchParams({
+    endpoint_url: document.querySelector('[name=cloud_endpoint_url]').value,
+    bucket:       document.querySelector('[name=cloud_bucket]').value,
+    access_key:   document.querySelector('[name=cloud_access_key]').value,
+    secret_key:   document.querySelector('[name=cloud_secret_key]').value,
+    region:       document.querySelector('[name=cloud_region]').value,
+  });
+  fetch('/config/cloud-test', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: payload.toString()})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      resultEl.textContent = d.ok ? '&#10003; ' + d.message : '&#10008; ' + d.message;
+      resultEl.style.color = d.ok ? 'var(--success)' : 'var(--danger)';
+      resultEl.innerHTML = (d.ok ? '&#10003; ' : '&#10008; ') + d.message;
+    })
+    .catch(function(e){ resultEl.textContent = 'Request failed: ' + e; resultEl.style.color='var(--danger)'; });
+}
 function updatePreview(){
   var p=document.querySelector('[name=prefix]').value||'INC';
   var s=document.querySelector('[name=separator]').value||'-';
@@ -1857,7 +1968,11 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
     <div class="security-row">
       <div class="sec-badge"><div class="sec-badge-icon">&#128274;</div>SHA-256 Chain of Custody</div>
       <div class="sec-badge"><div class="sec-badge-icon">&#128203;</div>Full Audit Log</div>
+      {% if cloud_mode and cloud_mode != 'local_only' %}
+      <div class="sec-badge" style="border-color:var(--blue);background:var(--blue-pale)"><div class="sec-badge-icon">&#9729;</div>Cloud Vault (AES-256)</div>
+      {% else %}
       <div class="sec-badge"><div class="sec-badge-icon">&#128196;</div>Stored Locally Only</div>
+      {% endif %}
       <div class="sec-badge"><div class="sec-badge-icon">&#9881;</div>Processed On-Premises</div>
       <div class="sec-badge"><div class="sec-badge-icon">&#128683;</div>Never Transmitted</div>
     </div>
@@ -1964,7 +2079,10 @@ DETAIL_TMPL = """<!doctype html><html><head><meta charset="utf-8"/>
         <tbody id="files-tbody">
           {% for f in vault_files %}
           <tr>
-            <td style="text-align:center;font-size:18px">{{ f.icon }}</td>
+            <td style="text-align:center;font-size:18px">
+              {{ f.icon }}
+              {% if f.get('cloud_badge') %}<div style="font-size:10px;color:var(--blue-light);margin-top:1px" title="Encrypted cloud copy stored">&#9729;</div>{% endif %}
+            </td>
             <td>
               <div style="font-weight:600;color:var(--navy)">{{ f.original_name }}</div>
               <div style="font-size:10px;font-family:monospace;color:var(--silver);margin-top:2px">{{ f.sha256[:20] }}...</div>
@@ -3225,9 +3343,12 @@ function uploadFile(file) {
       if (d.error) {
         tr.cells[4].innerHTML = '<span class="proc-err">&#9888; ' + escHtml(d.error) + '</span>';
       } else {
-        tr.cells[0].textContent = fileIcon(d.original_name);
+        var iconHtml = fileIcon(d.original_name);
+        if (d.cloud_key) iconHtml += '<div style="font-size:10px;color:#3B82F6;margin-top:1px" title="Encrypted cloud copy stored">&#9729;</div>';
+        tr.cells[0].innerHTML = iconHtml;
         tr.cells[1].innerHTML = '<div style="font-weight:600;color:var(--navy)">' + escHtml(d.original_name) + '</div>' +
           '<div style="font-size:10px;font-family:monospace;color:var(--silver);margin-top:2px">' + d.sha256.substring(0,20) + '...</div>';
+        if (d.cloud_warning) tr.cells[1].innerHTML += '<div style="font-size:10px;color:var(--danger);margin-top:2px">&#9888; Cloud: ' + escHtml(d.cloud_warning) + '</div>';
         tr.cells[2].textContent = formatSize(d.size_bytes);
         tr.cells[3].innerHTML = '<span class="muted" style="font-size:12px">' + escHtml(d.type_label) + '</span>';
         tr.cells[4].innerHTML = d.proc_error
@@ -3363,6 +3484,41 @@ def _size_label(b: int) -> str:
     if b < 1_048_576:
         return f"{b/1024:.1f} KB"
     return f"{b/1_048_576:.1f} MB"
+
+
+def _ensure_vault_files_local(workdir: str, engagement_id: str) -> list:
+    """
+    For cloud_only engagements, ensure each evidence file exists on disk before
+    Stage 1 can read them. Files that are missing locally but have a cloud_key
+    are downloaded and decrypted. Returns a list of Path strings that were restored
+    (so the caller can re-delete them afterwards).
+    """
+    restored: list = []
+    try:
+        from vectrion.cloud_vault import load_cloud_config, download_and_decrypt
+    except ImportError:
+        return restored
+
+    cloud_cfg = load_cloud_config(workdir)
+    if not cloud_cfg.get("enabled") or cloud_cfg.get("mode", "local_only") == "local_only":
+        return restored
+
+    records = _load_upload_index(workdir, engagement_id)
+    dest_dir = _upload_dir(workdir, engagement_id)
+    for rec in records:
+        cloud_key = rec.get("cloud_key")
+        if not cloud_key:
+            continue
+        local_path = dest_dir / rec["filename"]
+        if local_path.exists():
+            continue  # already present
+        try:
+            download_and_decrypt(cloud_key, workdir, cloud_cfg, local_path)
+            restored.append(str(local_path))
+        except Exception as exc:
+            import sys
+            print(f"[cloud_vault] WARNING: could not restore {cloud_key}: {exc}", file=sys.stderr)
+    return restored
 
 
 # Keys cleared per stage re-run (each stage clears its own + all downstream)
@@ -3610,14 +3766,23 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
 
     @app.get("/config")
     def config_panel():
+        from vectrion.cloud_vault import load_cloud_config
         cfg = load_config(workdir)
         stages = cfg.get("stages", [])
         custom_count = sum(1 for s in stages if s["id"].startswith("custom_"))
+        cloud_cfg_obj = load_cloud_config(workdir)
+        # Wrap in a simple namespace so Jinja2 can use dot-access
+        class _Obj:
+            def __init__(self, d):
+                self.__dict__.update(d)
+        cloud_cfg = _Obj(cloud_cfg_obj)
         return render_template_string(CONFIG_TMPL, page_title="Configuration", active_nav="config",
-                                      cfg=cfg, stages_enum=list(enumerate(stages)), custom_count=custom_count)
+                                      cfg=cfg, stages_enum=list(enumerate(stages)), custom_count=custom_count,
+                                      cloud_cfg=cloud_cfg)
 
     @app.post("/config/save")
     def config_save():
+        from vectrion.cloud_vault import load_cloud_config, save_cloud_config
         cfg = load_config(workdir)
         ids = request.form.getlist("id[]")
         custom_names = request.form.getlist("custom_name[]")
@@ -3641,7 +3806,34 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             "digits": int(request.form.get("digits", 4)),
         }
         save_config(workdir, cfg)
+
+        # Persist cloud vault settings
+        existing_cloud = load_cloud_config(workdir)
+        new_secret = request.form.get("cloud_secret_key", "").strip()
+        cloud_mode = request.form.get("cloud_mode", "local_only")
+        save_cloud_config(workdir, {
+            "enabled":      cloud_mode != "local_only",
+            "mode":         cloud_mode,
+            "endpoint_url": request.form.get("cloud_endpoint_url", "").strip(),
+            "bucket":       request.form.get("cloud_bucket", "").strip(),
+            "access_key":   request.form.get("cloud_access_key", "").strip(),
+            "secret_key":   new_secret if new_secret else existing_cloud.get("secret_key", ""),
+            "region":       request.form.get("cloud_region", "us-east-1").strip() or "us-east-1",
+        })
+
         return redirect(url_for("config_panel"))
+
+    @app.post("/config/cloud-test")
+    def config_cloud_test():
+        from vectrion.cloud_vault import test_connection
+        result = test_connection({
+            "endpoint_url": request.form.get("endpoint_url", "").strip(),
+            "bucket":       request.form.get("bucket", "").strip(),
+            "access_key":   request.form.get("access_key", "").strip(),
+            "secret_key":   request.form.get("secret_key", "").strip(),
+            "region":       request.form.get("region", "us-east-1").strip() or "us-east-1",
+        })
+        return app.response_class(response=json.dumps(result), mimetype="application/json")
 
     @app.get("/plugins")
     def plugins_page():
@@ -3822,6 +4014,9 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         client = s.get("client", {})
         # Load vault files
         from vectrion.ingestion import TYPE_ICONS
+        from vectrion.cloud_vault import load_cloud_config
+        cloud_cfg_det = load_cloud_config(workdir)
+        cloud_mode_det = cloud_cfg_det.get("mode", "local_only")
         raw_files = _load_upload_index(workdir, engagement_id)
         vault_files = []
         for f in raw_files:
@@ -3830,6 +4025,7 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
                 **f,
                 "icon": TYPE_ICONS.get(cat, "📁"),
                 "size_label": _size_label(f.get("size_bytes", 0)),
+                "cloud_badge": bool(f.get("cloud_key")),
             })
         rb = s.get("runbook", {})
         table_aliases = s.get("table_aliases", {})
@@ -3850,6 +4046,7 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             all_stages=cfg.get("stages", []),
             client=client,
             vault_files=vault_files,
+            cloud_mode=cloud_mode_det,
             runbook_json=json.dumps(rb, indent=2),
             disclaimer=LEGAL_DISCLAIMER,
             # Structured stage data for analysis tab
@@ -3880,6 +4077,11 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             return redirect(url_for("home"))
         current = s.get("current_layer")
         if current:
+            # For cloud_only mode: restore missing files before Stage 1 processes them
+            restored_files: list = []
+            if current == "1":
+                restored_files = _ensure_vault_files_local(workdir, engagement_id)
+
             vault_dir = _upload_dir(workdir, engagement_id)
             ctx = {**s, "workdir": str(workdir), "field_config": s.get("field_config", {})}
             updated = run_layer(
@@ -3888,6 +4090,14 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
                 engagement_id=engagement_id,
                 context=ctx,
             )
+
+            # Re-delete temporarily restored cloud_only files
+            for rpath in restored_files:
+                try:
+                    Path(rpath).unlink(missing_ok=True)
+                except Exception:
+                    pass
+
             s["runbook"] = updated
             done = s.get("completed_layers", [])
             if current not in done:
@@ -3945,16 +4155,42 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             pass
 
         record = {
-            "filename":      safe_name,
-            "original_name": uploaded.filename,
-            "sha256":        result["sha256"],
-            "size_bytes":    result["size_bytes"],
-            "type":          result["type"],
-            "type_label":    result["type_label"],
-            "method":        result["method"],
-            "uploaded_at":   datetime.now().isoformat()[:19],
-            "proc_error":    result["error"],
+            "filename":        safe_name,
+            "original_name":   uploaded.filename,
+            "sha256":          result["sha256"],
+            "size_bytes":      result["size_bytes"],
+            "type":            result["type"],
+            "type_label":      result["type_label"],
+            "method":          result["method"],
+            "uploaded_at":     datetime.now().isoformat()[:19],
+            "proc_error":      result["error"],
+            "cloud_key":       None,
+            "cloud_encrypted": False,
         }
+
+        # Cloud vault: encrypt and upload if enabled
+        cloud_error = None
+        try:
+            from vectrion.cloud_vault import load_cloud_config, upload_encrypted
+            cloud_cfg = load_cloud_config(workdir)
+            if cloud_cfg.get("enabled") and cloud_cfg.get("mode", "local_only") != "local_only":
+                try:
+                    cloud_key = upload_encrypted(dest, engagement_id, safe_name, workdir, cloud_cfg)
+                    record["cloud_key"] = cloud_key
+                    record["cloud_encrypted"] = True
+                    if cloud_cfg["mode"] == "cloud_only":
+                        dest.unlink(missing_ok=True)  # keep .txt extraction, delete raw file
+                    storage.audit(engagement_id, "file_cloud_uploaded", {
+                        "filename": safe_name, "cloud_key": cloud_key,
+                        "mode": cloud_cfg["mode"],
+                    })
+                except Exception as ce:
+                    cloud_error = str(ce)
+                    storage.audit(engagement_id, "file_cloud_error", {
+                        "filename": safe_name, "error": cloud_error,
+                    })
+        except ImportError:
+            pass  # cloud_vault module present but deps not installed — no-op for local_only
 
         # Atomically append to index (file-locked to prevent concurrent upload data loss)
         _append_upload_index(workdir, engagement_id, record)
@@ -3966,8 +4202,11 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
             "method":   result["method"],
         })
 
+        resp_data = {**record, "engagement_id": engagement_id}
+        if cloud_error:
+            resp_data["cloud_warning"] = cloud_error
         return app.response_class(
-            response=json.dumps({**record, "engagement_id": engagement_id}),
+            response=json.dumps(resp_data),
             mimetype="application/json",
         )
 
@@ -4181,6 +4420,18 @@ def create_app(workdir: str = ".vectrion", data_dir: str = None) -> Flask:
         s = storage.load_state_obj(engagement_id)
         if not s:
             return redirect(url_for("home"))
+
+        # Delete cloud objects before removing local state
+        try:
+            from vectrion.cloud_vault import load_cloud_config, delete_cloud_object
+            cloud_cfg = load_cloud_config(workdir)
+            if cloud_cfg.get("enabled"):
+                for rec in _load_upload_index(workdir, engagement_id):
+                    if rec.get("cloud_key"):
+                        delete_cloud_object(rec["cloud_key"], cloud_cfg)
+        except ImportError:
+            pass  # cloud deps not installed
+
         # Remove state file
         state_path = storage.state_dir / f"{engagement_id}.json"
         if state_path.exists():
